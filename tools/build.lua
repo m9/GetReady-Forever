@@ -31,7 +31,7 @@ end
 
 local db = qdb.open(tocPath)
 local dbDir = tocPath:gsub("[^/\\]*$", "")
-local result = build.run(db, defs, zones.load(dbDir, db:meta("Flavor")))
+local result = build.run(db, defs, zones.load(dbDir, db:meta("Flavor")), dofile(root .. "chains/fixes.lua"))
 
 for _, text in ipairs(result.problems) do print("PROBLEM " .. text) end
 for _, text in ipairs(result.warnings) do print("warning: " .. text) end

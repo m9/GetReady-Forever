@@ -12,6 +12,12 @@ local _, ns = ...
 local Progress = {}
 ns.Progress = Progress
 
+-- The class to filter by, as a bit. 0 = no filter: the player asked to see every class.
+local function classFilter()
+	if ns.db and ns.db.allClasses then return 0 end
+	return ns.api.ClassBit()
+end
+
 -- Is this step for the player's faction, race and class?
 local function forPlayer(step, faction, classBit, raceBit)
 	if step.side and step.side ~= faction then return false end
@@ -25,7 +31,7 @@ end
 -- that only lead up to someone else's goal do not make it the player's chain.
 function Progress.Visible(chain, faction)
 	if chain.side ~= "Both" and chain.side ~= faction then return false end
-	local classBit, raceBit = ns.api.ClassBit(), ns.api.RaceBit()
+	local classBit, raceBit = classFilter(), ns.api.RaceBit()
 	if chain.classes and classBit > 0 and math.floor(chain.classes / classBit) % 2 == 0 then return false end
 	if not chain.steps or #chain.steps == 0 then return true end
 	local goals, mine, any = false, false, false
@@ -67,7 +73,7 @@ end
 -- }
 function Progress.Chain(chain)
 	local api = ns.api
-	local faction, classBit, level = api.Faction(), api.ClassBit(), api.Level()
+	local faction, classBit, level = api.Faction(), classFilter(), api.Level()
 	local raceBit = api.RaceBit()
 
 	local steps, index, known = {}, {}, {}
@@ -83,7 +89,7 @@ function Progress.Chain(chain)
 	local flagged, active, covered = {}, {}, {}
 	local goals, goalsDone = 0, 0
 	for i, step in ipairs(steps) do
-		flagged[i] = api.QuestDone(step.quest)
+		flagged[i] = api.QuestDone(step.quest) or ns.StepMarked(step.quest)
 		active[i] = not flagged[i] and api.OnQuest(step.quest)
 		if step.goal then
 			goals = goals + 1
@@ -99,11 +105,24 @@ function Progress.Chain(chain)
 		if chain.any then chainDone = goalsDone > 0 else chainDone = goalsDone == goals end
 	end
 
+	-- A step that only points the way to another (step.leads) is no longer needed once
+	-- that one is in the log or behind the player.
+	local pointers = {}
+	for i, step in ipairs(steps) do
+		if step.leads and index[step.leads] then
+			local to = index[step.leads]
+			pointers[to] = pointers[to] or {}
+			table.insert(pointers[to], i)
+		end
+	end
+
 	-- Steps come with earlier quests first, so one pass from the end is enough.
 	for i = total, 1, -1 do
-		if chainDone then covered[i] = true end
+		-- a done chain covers its steps, but not the quests that come after its goals
+		if chainDone and not steps[i].extra then covered[i] = true end
 		if flagged[i] or active[i] or covered[i] then
 			local step = steps[i]
+			for _, at in ipairs(pointers[i] or {}) do covered[at] = true end
 			for _, quest in ipairs(step.all or {}) do if index[quest] then covered[index[quest]] = true end end
 			for _, quest in ipairs(step.any or {}) do if index[quest] then covered[index[quest]] = true end end
 		end
@@ -116,7 +135,7 @@ function Progress.Chain(chain)
 	local function cleared(quest)
 		local at = index[quest]
 		if at then return complete(result.states[at]) end
-		if known[quest] then return api.QuestDone(quest) end
+		if known[quest] then return api.QuestDone(quest) or ns.StepMarked(quest) end
 		return true
 	end
 
@@ -244,7 +263,7 @@ function Progress.Hints(step, state, need)
 		if to then lines[#lines + 1] = "Turn in: " .. to end
 	elseif state == "locked" and need then
 		if need.level then
-			lines[#lines + 1] = "Needs level " .. need.level
+			lines[#lines + 1] = "Required level: " .. need.level
 		elseif need.standing then
 			local faction = factionName(need.faction)
 			lines[#lines + 1] = "Needs " .. ns.api.StandingName(need.standing) .. (faction and (" with " .. faction) or "")
@@ -452,23 +471,27 @@ function Progress.AheadFacts(chain, progress, ahead)
 		facts[#facts + 1] = { label = "Dungeons", text = table.concat(ahead.dungeons, ", "), tone = "plain" }
 	end
 	local needs = {}
-	if ahead.level then needs[#needs + 1] = "level " .. ahead.level end
+	-- the level still needed is with the numbers (View.lua), next to the level the chain starts at
 	for _, pair in ipairs(ahead.standing) do
 		local faction = factionName(pair[1])
 		needs[#needs + 1] = ns.api.StandingName(pair[2]) .. (faction and (" with " .. faction) or "")
 	end
 	if #needs > 0 then facts[#facts + 1] = { label = "Needs", text = table.concat(needs, ", "), tone = "warn" } end
-	-- Reputation the steps still to do add up to: the three biggest, by name.
-	local gains, more = {}, 0
+	-- Reputation the steps still to do add up to: the three biggest, by name. `full` has
+	-- every one, a line each, for when the short text ends in "+2 more".
+	local gains, full, more = {}, {}, 0
 	for _, pair in ipairs(ahead.rep) do
 		local faction = factionName(pair[1])
 		if faction and pair[2] >= 1 then
-			if #gains < 3 then gains[#gains + 1] = "+" .. commas(pair[2]) .. " " .. faction else more = more + 1 end
+			local gain = "+" .. commas(pair[2]) .. " " .. faction
+			full[#full + 1] = gain
+			if #gains < 3 then gains[#gains + 1] = gain else more = more + 1 end
 		end
 	end
 	if #gains > 0 then
 		facts[#facts + 1] = { label = "Reputation", tone = "rep",
-			text = table.concat(gains, ", ") .. (more > 0 and (" +" .. more .. " more") or "") }
+			text = table.concat(gains, ", ") .. (more > 0 and (" +" .. more .. " more") or ""),
+			full = more > 0 and full or nil }
 	end
 	return facts
 end

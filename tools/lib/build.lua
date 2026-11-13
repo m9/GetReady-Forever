@@ -7,6 +7,9 @@
 local chain = require("chain")
 
 local build = { MAX_SOURCES = 5, MAX_REWARDS = 12, WEAPON = 2, ARMOR = 4 } -- the game's item classes
+-- A chain also takes the quests that follow its goals, this many links deep and no more
+-- than this many in all, and the quests that only point the way to one of its quests.
+build.FOLLOW_DEPTH, build.MAX_FOLLOW, build.MAX_CRUMBS = 3, 12, 8
 
 -- Race bits that tell the two sides apart: the classic races, and the one race each side
 -- got in Forever (bits 33 and 34).
@@ -72,13 +75,20 @@ local function firstSpawn(spawns)
 	return area, point[1], point[2]
 end
 
+-- Quests the database calls repeatable that are done one time (chains/fixes.lua); set by build.run.
+local once = {}
+
 local function repeatable(q)
+	if once[q.id] then return false end
 	return q.specialFlags ~= nil and q.specialFlags % 2 == 1
 end
 
 -- Returns { chains, npcs, objects, items, problems }.
 --   zones (optional): from zones.lua; gives map positions and dungeon areas.
-function build.run(db, defs, zones)
+--   fixes: { once = { quest IDs } }, see chains/fixes.lua; may be nil
+function build.run(db, defs, zones, fixes)
+	once = {}
+	for _, id in ipairs(fixes and fixes.once or {}) do once[id] = true end
 	local out = { chains = {}, npcs = {}, objects = {}, items = {}, areas = {}, factions = {}, problems = {}, warnings = {} }
 	local function faction(id)
 		if zones and zones.faction[id] then out.factions[id] = zones.faction[id] end
@@ -175,6 +185,111 @@ function build.run(db, defs, zones)
 		return out
 	end
 
+	-- Quests whose name or objective text holds one of the phrases. For dungeons the database
+	-- gives no zone to: their quests still say where to go. Repeatable ones are left out.
+	local function questsNaming(phrases)
+		local list = {}
+		for _, id in ipairs(db:questIds()) do
+			local q = db:quest(id)
+			local text = (q.name or "") .. "\n" .. table.concat(q.objectivesText or {}, "\n")
+			for _, phrase in ipairs(phrases) do
+				if text:find(phrase, 1, true) then
+					if not repeatable(q) then list[#list + 1] = q end
+					break
+				end
+			end
+		end
+		table.sort(list, function(a, b)
+			local la, lb = a.requiredLevel or 0, b.requiredLevel or 0
+			if la ~= lb then return la < lb end
+			return a.id < b.id
+		end)
+		local out = {}
+		for i, q in ipairs(list) do out[i] = q.id end
+		return out
+	end
+
+	-- Quests by the quest they come after, and by the quest they point to ("next in chain").
+	-- Made on first use.
+	local followersOf, crumbsOf
+	local function links()
+		if followersOf then return end
+		followersOf, crumbsOf = {}, {}
+		for _, id in ipairs(db:questIds()) do
+			local q = db:quest(id)
+			for _, field in ipairs({ "preQuestGroup", "preQuestSingle" }) do
+				for _, pre in ipairs(q[field] or {}) do
+					pre = math.abs(pre)
+					followersOf[pre] = followersOf[pre] or {}
+					table.insert(followersOf[pre], id)
+				end
+			end
+			local nextId = q.nextQuestInChain
+			if nextId and nextId > 0 then
+				crumbsOf[nextId] = crumbsOf[nextId] or {}
+				table.insert(crumbsOf[nextId], id)
+			end
+		end
+	end
+
+	-- Adds to a chain's quests (prerequisites first, see chain.build) the ones around them:
+	--   crumbs     a quest that only sends you to one of the chain's quests. It is not needed
+	--              for it, so it goes in front of it as an optional step (leads = that quest).
+	--   followers  quests that open once a goal is done (extra = true): the chain is done
+	--              without them, but they belong to its story.
+	-- Left out: repeatable quests, quests another chain has, quests of the other side.
+	local function around(nodes, side, taken)
+		links()
+		local has = {}
+		for _, node in ipairs(nodes) do has[node.id] = true end
+		local function fits(id)
+			if has[id] or taken[id] then return false end
+			local q = db:quest(id)
+			if not q or repeatable(q) then return false end
+			local s = build.side(q.requiredRaces)
+			return side == "Both" or s == "Both" or s == side
+		end
+		local out, crumbs = {}, 0
+		for _, node in ipairs(nodes) do
+			if not node.missing then
+				local list = {}
+				for _, id in ipairs(crumbsOf[node.id] or {}) do list[#list + 1] = id end
+				table.sort(list)
+				for _, id in ipairs(list) do
+					if crumbs < build.MAX_CRUMBS and fits(id) then
+						crumbs = crumbs + 1
+						has[id] = true
+						out[#out + 1] = { id = id, all = {}, any = {}, leads = node.id }
+					end
+				end
+			end
+			out[#out + 1] = node
+		end
+		local count = 0
+		local function follow(id, depth)
+			if depth > build.FOLLOW_DEPTH then return end
+			local list = {}
+			for _, next in ipairs(followersOf[id] or {}) do list[#list + 1] = next end
+			table.sort(list)
+			for _, next in ipairs(list) do
+				if count < build.MAX_FOLLOW and fits(next) then
+					count = count + 1
+					has[next] = true
+					local q = db:quest(next)
+					local node = { id = next, all = {}, any = {}, extra = true }
+					for _, pre in ipairs(q.preQuestGroup or {}) do node.all[#node.all + 1] = math.abs(pre) end
+					for _, pre in ipairs(q.preQuestSingle or {}) do node.any[#node.any + 1] = pre end
+					out[#out + 1] = node
+					follow(next, depth + 1)
+				end
+			end
+		end
+		for _, node in ipairs(nodes) do
+			if node.goal then follow(node.id, 1) end
+		end
+		return out
+	end
+
 	-- Weapons and armor by the creature that drops them, and those creatures by dungeon.
 	-- Made on first use. Zone-wide drops are left out, as for quest items.
 	local lootOf, insideOf
@@ -264,12 +379,19 @@ function build.run(db, defs, zones)
 				if not claimed[id] then goals[#goals + 1] = id end
 			end
 			if #goals == 0 then problem(def, "no quests found for zone " .. tostring(def.zone)) ok = false end
+		elseif def.mentions then
+			local skip = {}
+			for _, id in ipairs(def.skip or {}) do skip[id] = true end
+			for _, id in ipairs(questsNaming(def.mentions)) do
+				if not claimed[id] and not skip[id] then goals[#goals + 1] = id end
+			end
+			if #goals == 0 then problem(def, "no quests mention " .. table.concat(def.mentions, ", ")) ok = false end
 		elseif def.goals then
 			goals = def.goals
 		elseif def.goal then
 			goals = { def.goal }
 		elseif not def.reward then
-			problem(def, "needs a goal, goals, zone or reward")
+			problem(def, "needs a goal, goals, zone, mentions or reward")
 			ok = false
 		end
 		for _, goal in ipairs(goals) do
@@ -283,6 +405,7 @@ function build.run(db, defs, zones)
 			local c = { id = def.id, name = def.name, kind = def.kind, steps = {} }
 			if def.any then c.any = true end
 			if def.note then c.note = def.note end
+			if def.new then c.new = true end -- new in Forever
 			if def.art then c.art = def.art end
 			if def.classes then c.classes = def.classes end -- the whole chain is for these classes
 			if def.side then
@@ -298,7 +421,9 @@ function build.run(db, defs, zones)
 				if zones and zones.areaName[c.at.area] then out.areas[c.at.area] = zones.areaName[c.at.area] end
 			end
 
-			for _, node in ipairs(chain.build(db, goals)) do
+			local nodes = chain.build(db, goals)
+			if def.around ~= false then nodes = around(nodes, c.side, claimed) end
+			for _, node in ipairs(nodes) do
 				if node.missing then
 					problem(def, "quest " .. node.id .. " is not in the database")
 				else
@@ -309,6 +434,8 @@ function build.run(db, defs, zones)
 					end
 					local step = { quest = node.id, name = q.name, min = q.requiredLevel, level = q.questLevel }
 					if node.goal then step.goal = true end
+					if node.extra then step.extra = true end -- comes after a goal; the chain is done without it
+					if node.leads then step.optional, step.leads = true, node.leads end -- only points the way
 					if side ~= "Both" and c.side == "Both" then step.side = side end
 					step.races = build.races(q.requiredRaces)
 					if q.requiredClasses and q.requiredClasses > 0 then step.classes = q.requiredClasses end
@@ -343,9 +470,16 @@ function build.run(db, defs, zones)
 						end
 					end
 					if zones and zones.xp and zones.xp[node.id] then step.xp = zones.xp[node.id] end
+					-- what the quest asks, in the game's own words
+					if q.objectivesText and #q.objectivesText > 0 then
+						local text = table.concat(q.objectivesText, " "):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
+						if text ~= "" then step.text = text end
+					end
 					if step.min and (not c.level or step.min < c.level) then c.level = step.min end
 					c.steps[#c.steps + 1] = step
-					if not def.zone then claimed[node.id] = true end
+					-- a chain keeps its own quests to itself, but not the ones around it:
+					-- those may be another dungeon's quests
+					if not (def.zone or def.mentions or node.extra or node.leads) then claimed[node.id] = true end
 				end
 			end
 			if def.reward then
@@ -433,7 +567,7 @@ function build.run(db, defs, zones)
 		end)
 		if #loose > 0 then
 			table.sort(loose)
-			made[#made + 1] = { id = def.id .. "-other", name = "Other " .. def.name .. " quests", kind = "class",
+			made[#made + 1] = { id = def.id .. "-other", name = "Various " .. def.name .. " Quests", kind = "class",
 				goals = loose, classes = def.class, art = def.art }
 		end
 		return made
@@ -443,7 +577,7 @@ function build.run(db, defs, zones)
 	-- Then the classes, then the dungeons.
 	local madeFor = {}
 	for _, def in ipairs(defs) do
-		if not def.zone and not def.class then one(def, def) end
+		if not def.zone and not def.mentions and not def.class then one(def, def) end
 	end
 	for _, def in ipairs(defs) do
 		if def.class then
@@ -456,7 +590,7 @@ function build.run(db, defs, zones)
 		end
 	end
 	for _, def in ipairs(defs) do
-		if def.zone then one(def, def) end
+		if def.zone or def.mentions then one(def, def) end
 	end
 	for _, def in ipairs(defs) do
 		for _, made in ipairs(madeFor[def] or { def }) do
@@ -503,8 +637,8 @@ local function value(v)
 	error("build: cannot write " .. tv)
 end
 
-local CHAIN_KEYS = { "id", "name", "kind", "side", "classes", "level", "reward", "any", "note", "art", "at", "loot" }
-local STEP_KEYS = { "quest", "name", "goal", "min", "level", "side", "races", "classes", "rep", "all", "any", "from", "to", "kill", "use", "items", "rewards", "repGain", "xp" }
+local CHAIN_KEYS = { "id", "name", "kind", "side", "classes", "level", "reward", "any", "note", "new", "art", "at", "loot" }
+local STEP_KEYS = { "quest", "name", "goal", "min", "level", "side", "races", "classes", "rep", "all", "any", "from", "to", "kill", "use", "items", "rewards", "repGain", "xp", "text", "extra", "optional", "leads" }
 
 local function fields(rec, keys)
 	local parts = {}
