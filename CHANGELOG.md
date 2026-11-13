@@ -1,5 +1,9 @@
 # Changelog
 
+## 16001-3.1
+
+- Options: hint lines removed.
+
 ## 16001-3.0
 
 - New dungeons: The Drowned City, Krol'dok Stronghold, Alcaz Prison, Blackmaw Hold, The Shaper's Terrace.

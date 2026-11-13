@@ -11,7 +11,6 @@ local STEP = 5 -- percent per click on the size buttons
 
 local GOLD = { 1.00, 0.82, 0.30 }
 local TEXT = { 0.94, 0.92, 0.86 }
-local MUTED = { 0.64, 0.61, 0.55 }
 local PANEL = { 0.075, 0.07, 0.062 }
 local LINE = { 0.27, 0.235, 0.16 }
 
@@ -82,12 +81,10 @@ function Options.Fill(parent, x, y)
 	set.more:SetPoint("LEFT", set.value, "RIGHT", 10, 0)
 	set.more.option = "more"
 	set.more:SetScript("OnClick", function() Options.SetSize(Options.Size() + STEP) end)
-	set.sizeHint = Label(parent, "GameFontHighlightSmall", MUTED, "Share of the screen the window fills.")
-	set.sizeHint:SetPoint("TOPLEFT", x, y - 52)
 
 	set.all = CreateFrame("Button", nil, parent)
 	set.all:SetSize(240, 24)
-	set.all:SetPoint("TOPLEFT", x, y - 82)
+	set.all:SetPoint("TOPLEFT", x, y - 60)
 	set.all.option = "allClasses"
 	set.all.box = set.all:CreateTexture(nil, "BACKGROUND")
 	set.all.box:SetSize(20, 20)
@@ -100,12 +97,10 @@ function Options.Fill(parent, x, y)
 	set.all.label = Label(set.all, "GameFontNormal", GOLD, "Show other classes")
 	set.all.label:SetPoint("LEFT", set.all.box, "RIGHT", 8, 0)
 	set.all:SetScript("OnClick", function() Options.SetAllClasses(not Options.AllClasses()) end)
-	set.allHint = Label(parent, "GameFontHighlightSmall", MUTED, "Also list chains and steps your class cannot do.")
-	set.allHint:SetPoint("TOPLEFT", x, y - 110)
 
 	filled[#filled + 1] = set
 	Options.Sync()
-	return 126
+	return 84
 end
 
 -- Shows the saved values on every set of controls.
