@@ -225,7 +225,7 @@ do
 	eq("zones: object entrance", result.objects[600].y, 60)
 
 	-- several goals, one enough
-	result = build.run(db, { { id = "multi", name = "Multi", kind = "raid", goals = { 3, 4 }, any = true } })
+	result = build.run(db, { { id = "multi", name = "Multi", kind = "raid", goals = { 3, 4 }, any = true, around = false } })
 	eq("goals: no problems", #result.problems, 0)
 	local c = result.chains[1]
 	eq("goals: any flag", c.any, true)
@@ -259,6 +259,13 @@ do
 	rec("Quest", 32, { [1] = "Again and again", [4] = 18, [5] = 22, [17] = 25, [24] = 1 }, {})
 	rec("Quest", 33, { [1] = "Lead-in", [4] = 16, [5] = 20, [17] = 14 }, {})
 	rec("Quest", 34, { [1] = "Key quest", [4] = 20, [5] = 22, [17] = 25 }, { [3] = { [2] = { 601 } } })
+	-- a dungeon the database gives no zone: 40 names it, 41 says it in its text and follows 42,
+	-- 43 is repeatable, 44 matches but is skipped by hand
+	rec("Quest", 40, { [1] = "Into the Sunken Fort", [4] = 30, [5] = 32 }, {})
+	rec("Quest", 41, { [1] = "Bones", [4] = 28, [5] = 32 }, { [8] = { "Collect 5 bones in the Sunken Fort." }, [13] = { 42 } })
+	rec("Quest", 42, { [1] = "Road there", [4] = 26, [5] = 30 }, {})
+	rec("Quest", 43, { [1] = "Daily bones", [4] = 28, [5] = 32, [24] = 1 }, { [8] = { "More bones from the Sunken Fort." } })
+	rec("Quest", 44, { [1] = "Not this one", [4] = 29, [5] = 32 }, { [8] = { "A letter about the Sunken Fort." } })
 	local n = 0
 	local zdb = qdb.fromLines(function() n = n + 1 return extra[n] end)
 	local z = zones.from({ [14] = 1411 }, { { id = 25, name = "Deep Hole", areas = { 25, 26 }, entrances = { { 14, 50, 60 } } } })
@@ -284,7 +291,33 @@ do
 	eq("warning: unknown object", #result.warnings, 1)
 	eq("unknown object has no name", result.objects[601].name, nil)
 
-	eq("problem: empty zone", #build.run(zdb, { { id = "x", name = "X", kind = "dungeon", zone = 77 } }, z).problems, 1)
+	-- mentions: goals found by the dungeon's name in quest names and objective text
+	do
+		local named = build.run(zdb, {
+			{ id = "fort", name = "Sunken Fort", kind = "dungeon", mentions = { "Sunken Fort" }, skip = { 44 } },
+		}, z)
+		eq("mentions: no problems", #named.problems, 0, named.problems[1])
+		local goals, all = {}, {}
+		for _, step in ipairs(named.chains[1].steps) do
+			all[#all + 1] = step.quest
+			if step.goal then goals[#goals + 1] = step.quest end
+		end
+		table.sort(goals)
+		table.sort(all)
+		eq("mentions: goals", table.concat(goals, ","), "40,41")
+		eq("mentions: lead-in comes along, repeatable and skipped do not", table.concat(all, ","), "40,41,42")
+		eq("problem: nothing mentions it", #build.run(zdb, { { id = "x", name = "X", kind = "dungeon", mentions = { "Nowhere Keep" } } }, z).problems, 1)
+		-- a quest a named chain already has is left out
+		local shared = build.run(zdb, {
+			{ id = "fort", name = "Sunken Fort", kind = "dungeon", mentions = { "Sunken Fort" } },
+			{ id = "fort-key", name = "Fort Key", kind = "key", goal = 40 },
+		}, z)
+		local has40 = false
+		for _, step in ipairs(shared.chains[1].steps) do if step.quest == 40 then has40 = true end end
+		eq("mentions: quest of another chain left out", has40, false)
+	end
+
+	eq("problem: empty zone",#build.run(zdb, { { id = "x", name = "X", kind = "dungeon", zone = 77 } }, z).problems, 1)
 	eq("problem: nothing to do", #build.run(zdb, { { id = "x", name = "X", kind = "key" } }, z).problems, 1)
 	eq("item-only chain builds", #build.run(db, { { id = "x", name = "X", kind = "key", reward = 701 } }).chains, 1)
 
@@ -310,7 +343,7 @@ do
 	eq("class: steps in order", form.steps[1].quest .. ">" .. form.steps[2].quest, "30>31")
 	check("class: the last quest is the goal", form.steps[2].goal and not form.steps[1].goal)
 	eq("class: race limit kept on the step", form.steps[2].races, 32)
-	eq("class: loose quests share a chain", other.id .. " " .. other.name .. " " .. #other.steps, "c-druid-other Other Druid quests 1")
+	eq("class: loose quests share a chain", other.id .. " " .. other.name .. " " .. #other.steps, "c-druid-other Various Druid Quests 1")
 	eq("class: repeatable quests are left out", other.steps[1].quest, 32)
 	check("class: written to the file", build.render(classy, "mock"):find('kind = "class", side = "Horde", classes = 1024', 1, true) ~= nil)
 	eq("class: needs an id and a name", #build.run(db, { { class = 1024 } }).problems, 1)

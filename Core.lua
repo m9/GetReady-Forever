@@ -3,6 +3,9 @@ local ADDON, ns = ...
 -- The addon's picture: a key. The TOC names the same one for the game's addon list.
 ns.ICON = "Interface\\Icons\\INV_Misc_Key_15"
 
+-- How much of the screen the window fills, in percent, until the player picks a size.
+ns.DEFAULT_SIZE, ns.MIN_SIZE, ns.MAX_SIZE = 80, 40, 100
+
 -- Game calls in one place, so tests can swap them out.
 local api = {}
 ns.api = api
@@ -18,6 +21,24 @@ end
 
 function api.QuestName(id)
 	return C_QuestLog and C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(id) or nil
+end
+
+-- Is a quest in the log complete, ready to turn in?
+function api.QuestComplete(id)
+	local log = C_QuestLog
+	if log and log.IsComplete then return log.IsComplete(id) and true or false end
+	if log and log.ReadyForTurnIn then return log.ReadyForTurnIn(id) and true or false end
+	return false
+end
+
+-- How far the player is with a quest in the log: { { text = "3/5 Bones", done = false }, ... }.
+function api.Objectives(id)
+	local out = {}
+	local list = C_QuestLog and C_QuestLog.GetQuestObjectives and C_QuestLog.GetQuestObjectives(id)
+	for _, o in ipairs(list or {}) do
+		if o.text and o.text ~= "" then out[#out + 1] = { text = o.text, done = o.finished and true or false } end
+	end
+	return out
 end
 
 function api.ItemCount(id)
@@ -62,9 +83,10 @@ function api.ItemTooltip(owner, id, note)
 end
 
 -- Plain tooltip: a gold title and a few lines under it.
-function api.TextTooltip(owner, title, lines)
+-- anchor: where the tooltip goes; to the right of the owner unless said otherwise
+function api.TextTooltip(owner, title, lines, anchor)
 	if not GameTooltip then return end
-	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+	GameTooltip:SetOwner(owner, anchor or "ANCHOR_RIGHT")
 	GameTooltip:SetText(title, 1, 0.82, 0)
 	for _, line in ipairs(lines or {}) do GameTooltip:AddLine(line, 0.95, 0.91, 0.8, true) end
 	GameTooltip:Show()
@@ -130,6 +152,24 @@ function api.SetWaypoint(map, x, y)
 		C_SuperTrack.SetSuperTrackedUserWaypoint(true)
 	end
 	return true
+end
+
+-- Opens the game's map on a zone and brings it in front of other windows.
+-- False when this client cannot, or not right now.
+function api.OpenMap(map)
+	if not map then return false end
+	if InCombatLockdown and InCombatLockdown() then return false end
+	local ok = false
+	if OpenWorldMap then
+		ok = (pcall(OpenWorldMap, map))
+	elseif WorldMapFrame and ShowUIPanel and WorldMapFrame.SetMapID then
+		ok = (pcall(function()
+			ShowUIPanel(WorldMapFrame)
+			WorldMapFrame:SetMapID(map)
+		end))
+	end
+	if ok and WorldMapFrame and WorldMapFrame.Raise then pcall(WorldMapFrame.Raise, WorldMapFrame) end
+	return ok
 end
 
 -- Can this character use an item? ---------------------------------------------------
@@ -241,11 +281,32 @@ function ns.Mark(id, on)
 	ns.db.marked[who][id] = on and true or nil
 end
 
+-- Steps the player marked as done by hand, per character, by quest ID. A quest marked in
+-- one chain counts in every chain that has it.
+function ns.StepMarked(quest)
+	local mine = ns.db.steps and ns.db.steps[api.Character()]
+	return mine and mine[quest] or false
+end
+
+function ns.MarkStep(quest, on)
+	local who = api.Character()
+	ns.db.steps = ns.db.steps or {}
+	ns.db.steps[who] = ns.db.steps[who] or {}
+	ns.db.steps[who][quest] = on and true or nil
+end
+
 local function LoadSettings()
 	if type(GetReadyDB) ~= "table" then GetReadyDB = {} end
 	ns.db = GetReadyDB
 	if type(ns.db.closed) ~= "table" then ns.db.closed = {} end
+	-- The list starts with every section folded; after that it is as the player left it.
+	if not ns.db.folded then
+		ns.db.folded = true
+		for _, kind in ipairs({ "raid", "key", "dungeon", "misc", "class" }) do ns.db.closed[kind] = true end
+		for bit = 0, 10 do ns.db.closed["class-" .. 2 ^ bit] = true end
+	end
 	if type(ns.db.marked) ~= "table" then ns.db.marked = {} end -- [character][chain id] = true
+	if type(ns.db.steps) ~= "table" then ns.db.steps = {} end -- [character][quest ID] = true
 	if type(ns.db.modes) ~= "table" then ns.db.modes = {} end -- steps as graph or list, per chain
 	if type(ns.db.minimap) ~= "table" then ns.db.minimap = {} end -- the minimap button: angle, hide
 end
@@ -256,16 +317,26 @@ SLASH_GETREADY1 = "/gr"
 SLASH_GETREADY2 = "/getready"
 -- "/gr" opens or closes the window. "/gr size 80" makes it fill 80% of the screen.
 -- "/gr minimap" hides the minimap button or brings it back.
+-- "/gr options" opens the options.
+-- "/gr dump" saves what the game knows about places and quest rewards, for the data build.
 SlashCmdList.GETREADY = function(msg)
+	if tostring(msg or ""):lower():match("^%s*dump%s*$") then
+		ns.Dump.Run()
+		return
+	end
 	if tostring(msg or ""):lower():match("^%s*minimap%s*$") then
 		ns.db.minimap.hide = not ns.db.minimap.hide or nil
 		ns.MinimapButton.Apply()
 		ns.Print(ns.db.minimap.hide and "Minimap button hidden. /gr minimap brings it back." or "Minimap button shown.")
 		return
 	end
+	if tostring(msg or ""):lower():match("^%s*options%s*$") then
+		ns.Options.Open()
+		return
+	end
 	local size = tostring(msg or ""):lower():match("^%s*size%s+(%d+)")
 	if size then
-		ns.db.size = math.max(40, math.min(100, tonumber(size)))
+		ns.db.size = math.max(ns.MIN_SIZE, math.min(ns.MAX_SIZE, tonumber(size)))
 		ns.Window.Resize()
 		ns.Print("Window size: " .. ns.db.size .. "% of the screen.")
 		return
@@ -287,6 +358,7 @@ events:SetScript("OnEvent", function(_, event, name)
 		if name == ADDON then
 			LoadSettings()
 			ns.MinimapButton.Apply()
+			ns.Options.Register()
 		end
 		return
 	end

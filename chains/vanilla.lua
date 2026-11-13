@@ -42,6 +42,11 @@ return {
 		note = "Opens Scholomance." },
 	{ id = "mara-scepter", name = "Scepter of Celebras", kind = "key", art = "Maraudon", goal = 7046, reward = 17191,
 		note = "Opens the portal to the inner part of Maraudon." },
+	{ id = "dalaran-key-alliance", name = "Dalaran Sewer Key", kind = "key", art = "Dungeon", goal = 92458, reward = 277507, new = true,
+		note = "Opens the sewers of the City of Dalaran." },
+	{ id = "dalaran-key-horde", name = "Dalaran Sewer Key", kind = "key", art = "Dungeon", goal = 96984, reward = 277507, new = true,
+		note = "Opens the sewers of the City of Dalaran." },
+	{ id = "dalaran-tome", name = "Tome of Dalaran", kind = "key", art = "Dungeon", reward = 275989, new = true },
 	{ id = "sm-key", name = "The Scarlet Key", kind = "key", art = "Monastery", reward = 7146,
 		note = "Opens the Armory and Cathedral in Scarlet Monastery." },
 	{ id = "gnomer-key", name = "Workshop Key", kind = "key", art = "Gnomeregan", reward = 6893,
@@ -53,12 +58,12 @@ return {
 
 	-- Other
 	{ id = "aq-scepter", name = "Scepter of the Shifting Sands", kind = "misc", art = "AhnQiraj40man", goal = 8743,
-		note = "The long road to ringing the gong at the gates of Ahn'Qiraj." },
+		note = "Lets you ring the gong at the gates of Ahn'Qiraj." },
 	{ id = "mc-quintessence", name = "Aqual Quintessence", kind = "misc", art = "MoltenCore", goal = 6824,
 		note = "Needed to douse the runes in Molten Core." },
 	{ id = "dungeon-set-2", name = "Dungeon Set 2", kind = "misc", art = "Dungeon", goals = {
 		8999, 9000, 9001, 9002, 9003, 9004, 9005, 9006, 9007, 9008, 9009, 9010, 9011, 9012, 9013, 9014,
-	}, note = "Upgrades your first dungeon set, piece by piece." },
+	}, note = "Upgrades your first dungeon set." },
 	{ id = "quel-serrar", name = "Quel'Serrar", kind = "misc", art = "DireMaul", goal = 7509 },
 	{ id = "thunderfury", name = "Thunderfury", kind = "misc", art = "MoltenCore", goal = 7787 },
 	{ id = "sleeping-bag", name = "Cozy Sleeping Bag", kind = "misc", goal = 79976, reward = 211527 },
