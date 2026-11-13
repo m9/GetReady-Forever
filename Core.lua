@@ -1,5 +1,8 @@
 local ADDON, ns = ...
 
+-- The addon's picture: a key. The TOC names the same one for the game's addon list.
+ns.ICON = "Interface\\Icons\\INV_Misc_Key_15"
+
 -- Game calls in one place, so tests can swap them out.
 local api = {}
 ns.api = api
@@ -224,7 +227,7 @@ end
 
 -- Saved settings --------------------------------------------------------------
 
-ns.db = { closed = {}, modes = {}, marked = {} } -- replaced by the saved table once it has loaded
+ns.db = { closed = {}, modes = {}, marked = {}, minimap = {} } -- replaced by the saved table once it has loaded
 
 -- Chains the player marked as done by hand, per character.
 function ns.Marked(id)
@@ -244,6 +247,7 @@ local function LoadSettings()
 	if type(ns.db.closed) ~= "table" then ns.db.closed = {} end
 	if type(ns.db.marked) ~= "table" then ns.db.marked = {} end -- [character][chain id] = true
 	if type(ns.db.modes) ~= "table" then ns.db.modes = {} end -- steps as graph or list, per chain
+	if type(ns.db.minimap) ~= "table" then ns.db.minimap = {} end -- the minimap button: angle, hide
 end
 
 -- Slash commands ------------------------------------------------------------
@@ -251,7 +255,14 @@ end
 SLASH_GETREADY1 = "/gr"
 SLASH_GETREADY2 = "/getready"
 -- "/gr" opens or closes the window. "/gr size 80" makes it fill 80% of the screen.
+-- "/gr minimap" hides the minimap button or brings it back.
 SlashCmdList.GETREADY = function(msg)
+	if tostring(msg or ""):lower():match("^%s*minimap%s*$") then
+		ns.db.minimap.hide = not ns.db.minimap.hide or nil
+		ns.MinimapButton.Apply()
+		ns.Print(ns.db.minimap.hide and "Minimap button hidden. /gr minimap brings it back." or "Minimap button shown.")
+		return
+	end
 	local size = tostring(msg or ""):lower():match("^%s*size%s+(%d+)")
 	if size then
 		ns.db.size = math.max(40, math.min(100, tonumber(size)))
@@ -273,7 +284,10 @@ for _, event in ipairs({
 end
 events:SetScript("OnEvent", function(_, event, name)
 	if event == "ADDON_LOADED" then
-		if name == ADDON then LoadSettings() end
+		if name == ADDON then
+			LoadSettings()
+			ns.MinimapButton.Apply()
+		end
 		return
 	end
 	if ns.Window then ns.Window.Queue() end

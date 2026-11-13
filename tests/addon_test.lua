@@ -56,6 +56,12 @@ function CreateFrame(kind, name, parent, template)
 end
 function CreateColor(r, g, b, a) return { r = r, g = g, b = b, a = a } end
 UIParent = Mock("Frame")
+Minimap = Mock("Frame")
+Minimap.GetWidth = function() return 140 end
+Minimap.GetCenter = function() return 500, 400 end
+Minimap.GetEffectiveScale = function() return 2 end
+local cursor = { 0, 0 }
+function GetCursorPosition() return cursor[1], cursor[2] end
 UISpecialFrames = {}
 SlashCmdList = {}
 tinsert = table.insert
@@ -112,10 +118,11 @@ FACTION_STANDING_LABEL4, FACTION_STANDING_LABEL6, FACTION_STANDING_LABEL7 = "Neu
 
 -- Load the files the TOC lists -------------------------------------------------
 local ns = {}
-local loaded, savedVars = 0, nil
+local loaded, savedVars, tocIcon = 0, nil, nil
 for line in io.lines(root .. "GetReady.toc") do
 	line = line:gsub("\r$", "")
 	savedVars = savedVars or line:match("^## SavedVariables: (.+)$")
+	tocIcon = tocIcon or line:match("^## IconTexture: (.+)$")
 	if line ~= "" and not line:match("^#") then
 		local path = root .. line:gsub("\\", "/")
 		local chunk, err = loadfile(path)
@@ -123,7 +130,8 @@ for line in io.lines(root .. "GetReady.toc") do
 		if chunk then chunk("GetReady", ns) loaded = loaded + 1 end
 	end
 end
-eq("toc file count", loaded, 5)
+eq("toc file count", loaded, 6)
+eq("toc icon is the addon's icon", tocIcon, ns.ICON)
 eq("toc saved variable", savedVars, "GetReadyDB")
 
 -- Settings load on ADDON_LOADED
@@ -135,6 +143,36 @@ GetReadyDB = { selected = "ony-horde" }
 eventFrame.scripts.OnEvent(eventFrame, "ADDON_LOADED", "GetReady")
 check("settings table used", ns.db == GetReadyDB)
 check("settings get defaults", type(ns.db.closed) == "table")
+
+-- the minimap button
+do
+	local b = GetReadyMinimapButton
+	check("minimap: button made when the settings load", b ~= nil and b.shown)
+	eq("minimap: on the minimap", b and b.parent, Minimap)
+	eq("minimap: shows the addon's icon", b.icon.texture, ns.ICON)
+	-- 215 degrees on a circle of 75: lower left
+	check("minimap: default place is lower left", b.point[4] < -60 and b.point[5] < -40, b.point[4] .. "," .. b.point[5])
+	-- dragged to straight above the minimap's middle
+	cursor = { 1000, 1000 }
+	b.scripts.OnDragStart(b)
+	b.scripts.OnUpdate(b)
+	b.scripts.OnDragStop(b)
+	eq("minimap: drag saves the angle", ns.db.minimap.angle, 90)
+	check("minimap: drag moves it to the top", math.abs(b.point[4]) < 0.001 and b.point[5] == 75, b.point[4] .. "," .. b.point[5])
+	check("minimap: drag ends", rawget(b.scripts, "OnUpdate") == nil)
+	SlashCmdList.GETREADY("minimap")
+	check("minimap: slash hides", ns.db.minimap.hide == true and not b.shown)
+	check("minimap: says how to get it back", printed[#printed]:find("/gr minimap", 1, true) ~= nil)
+	SlashCmdList.GETREADY(" Minimap ")
+	check("minimap: slash shows again", ns.db.minimap.hide == nil and b.shown)
+	b.scripts.OnEnter(b)
+	check("minimap: tooltip", tips.title == "Get Ready" and tips.lines[1] == "Click to open or close.")
+	check("minimap: window not open yet", not ns.Window.IsShown())
+	b.scripts.OnClick(b)
+	check("minimap: click opens the window", ns.Window.IsShown())
+	b.scripts.OnClick(b)
+	check("minimap: click closes it again", not ns.Window.IsShown())
+end
 
 local Progress = ns.Progress
 local realData = { Chains = ns.Chains, Npcs = ns.Npcs, Objects = ns.Objects, Items = ns.Items, Areas = ns.Areas, Factions = ns.Factions }

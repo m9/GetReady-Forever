@@ -1,8 +1,9 @@
 ## Interface: 16001
 ## Title: Get Ready
 ## Notes: Track attunements, keys and dungeon quests.
-## Version: 0.2.0
+## Version: 16001-2.1
 ## Category: Quests
+## IconTexture: Interface\Icons\INV_Misc_Key_15
 ## SavedVariables: GetReadyDB
 
 Core.lua
@@ -10,3 +11,4 @@ Data\Chains.lua
 Progress.lua
 View.lua
 Window.lua
+Minimap.lua
