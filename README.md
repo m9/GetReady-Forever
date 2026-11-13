@@ -4,7 +4,9 @@ A new attunement and quest chain tracker for WoW Forever. Early work.
 
 ## Use
 
-`/gr` or `/getready` opens the window. It fills most of the screen; `/gr size 80` makes it fill 80% (40 to 100).
+`/gr` or `/getready` opens the window, and so does a click on the Get Ready button at the minimap. Drag that button to move it around the minimap; `/gr minimap` hides it or brings it back.
+
+The window fills most of the screen; `/gr size 80` makes it fill 80% (40 to 100).
 
 - Left: your chains, in groups. Click a group name to fold it.
 - Middle: the picked chain under a banner with a picture of the place, then what is still ahead, every reward its quests give, what to do next, and all its steps.
@@ -47,6 +49,7 @@ Download `GetReady-<version>.zip` from the [releases page](https://github.com/m9
 - A build tool fills in the rest from [QuestieDB](https://github.com/Questie/QuestieDB): the quests before each goal, who gives them, what to kill and collect, map positions, rewards, XP, possible loot, and faction, class, level and reputation needs.
 - The result is `Data/Chains.lua`. The addon only reads that file.
 - `View.lua` decides every line of text the window shows and where each step sits in the graph. `Window.lua` only draws it.
+- The addon's icon is one of the game's key item icons, named once in `Core.lua` and once in the TOC.
 - The banner picture is one of the game's own loading screens, named per chain in `chains/*.lua` (`art`). No image files ship with the addon.
 
 ## Tools
