@@ -1,5 +1,9 @@
 # Changelog
 
+## 16001-3.2
+
+- Quest data from QuestieDB 1.1.1.
+
 ## 16001-3.1
 
 - Options: hint lines removed.
