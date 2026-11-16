@@ -1,5 +1,9 @@
 # Changelog
 
+## 16001-3.4
+
+- Added the CurseForge project ID.
+
 ## 16001-3.3
 
 - New addon icon.
