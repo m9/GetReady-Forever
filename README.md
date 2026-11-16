@@ -38,7 +38,7 @@ Needs LuaJIT, `curl` and `tar`. `Data/Chains.lua` is built from `chains/*.lua` a
 
 ## Credits
 
-Inspired by Attune by CixiDelmont. No code or data is taken from it.
+Inspired by Attune by CixiDelmont.
 Quest data: QuestieDB.
 
 ## License
