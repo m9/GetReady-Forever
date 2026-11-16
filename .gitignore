@@ -1,3 +1,5 @@
 *.zip
 *.bak
 /out/
+/.cache/
+.DS_Store

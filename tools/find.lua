@@ -1,18 +1,23 @@
 -- Searches the quest database by name.
--- Usage: luajit tools/find.lua <QuestieDB_Forever.toc> <quest|item|npc|object> <text> [more text ...]
+-- Usage: luajit tools/find.lua [--questiedb <version>] <quest|item|npc|object> <text> [more text ...]
 --   Each text is searched on its own. Matching ignores case.
+--   Reads the QuestieDB version deps.lua records, or the one given.
 
 local here = arg[0]:gsub("[^/\\]*$", "")
 package.path = here .. "lib/?.lua;" .. package.path
 
 local qdb = require("qdb")
 local build = require("build")
+local deps = require("deps")
 
-local tocPath, kind = arg[1], arg[2]
-if not tocPath or not kind or not arg[3] then
-	print("usage: luajit tools/find.lua <QuestieDB_Forever.toc> <quest|item|npc|object> <text> [more text ...]")
+local function usage()
+	print("usage: luajit tools/find.lua [--questiedb <version>] <quest|item|npc|object> <text> [more text ...]")
 	os.exit(1)
 end
+if not arg[2] then usage() end
+local tocPath, words = deps.questiedb(arg, here .. "../")
+local kind = table.remove(words, 1)
+if not kind or not words[1] then usage() end
 
 local db = qdb.open(tocPath)
 local ids = db:ids(kind)
@@ -28,9 +33,9 @@ local function list(t)
 	return table.concat(out, ",")
 end
 
-for i = 3, #arg do
-	local needle = arg[i]:lower()
-	print("== " .. arg[i])
+for _, word in ipairs(words) do
+	local needle = word:lower()
+	print("== " .. word)
 	for _, id in ipairs(ids) do
 		if names[id]:lower():find(needle, 1, true) then
 			local rec = db:record(kind, id)

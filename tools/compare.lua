@@ -1,17 +1,27 @@
 -- Compares what the Attune addon tracks with what Get Ready tracks: which of its chains
 -- have a counterpart here, and which quests it has that none of our chains has.
 -- Attune's lists are read only to count and to match by quest ID; nothing is copied.
--- Usage: luajit tools/compare.lua <path to the Attune addon folder> <QuestieDB_Forever.toc>
+-- Usage: luajit tools/compare.lua [--attune <commit>] [--questiedb <version>]
 --   Run it after a build, and after an Attune or QuestieDB update.
+--   Both are the versions deps.lua records unless given. Attune's files are downloaded into
+--   .cache/ for this tool only (tools/lib/deps.lua).
+--   Two paths instead, an Attune addon folder and a QuestieDB_Forever.toc, read those.
 
 local here = arg[0]:gsub("[^/\\]*$", "")
 local ourDir = here .. ".."
-local attuneDir, toc = arg[1], arg[2]
-if not (attuneDir and toc) then
-	print("usage: luajit tools/compare.lua <Attune addon folder> <QuestieDB_Forever.toc>")
-	os.exit(1)
-end
 package.path = here .. "lib/?.lua;" .. package.path
+local deps = require("deps")
+
+local attuneDir, toc = deps.guard(function()
+	local rest, opts = deps.split(arg)
+	if #rest == 2 then return rest[1], rest[2] end
+	if #rest ~= 0 then
+		print("usage: luajit tools/compare.lua [--attune <commit>] [--questiedb <version>]")
+		os.exit(1)
+	end
+	local d = deps.new(here .. "../")
+	return d:fetch("attune", opts.attune), d:toc(opts.questiedb)
+end)
 
 -- Attune's data, in a bare environment
 local env = setmetatable({ Attune_Data = {} }, { __index = _G })

@@ -1,6 +1,9 @@
 -- Builds Data/Chains.lua from chains/*.lua and the quest database.
--- Usage: luajit tools/build.lua <QuestieDB_Forever.toc> [--check]
---   --check  build but do not write; fail if Data/Chains.lua would change.
+-- Usage: luajit tools/build.lua [--check] [--questiedb <version>]
+--   --check      build but do not write; fail if Data/Chains.lua would change.
+--   --questiedb  build against this QuestieDB version, not the one deps.lua records.
+--   The database is downloaded into .cache/ when it is not there (tools/lib/deps.lua).
+--   A path to a QuestieDB_Forever.toc as the first argument reads that file instead.
 
 local here = arg[0]:gsub("[^/\\]*$", "")
 package.path = here .. "lib/?.lua;" .. package.path
@@ -8,17 +11,18 @@ package.path = here .. "lib/?.lua;" .. package.path
 local qdb = require("qdb")
 local build = require("build")
 local zones = require("zones")
-
-local tocPath, check = nil, false
-for i = 1, #arg do
-	if arg[i] == "--check" then check = true else tocPath = tocPath or arg[i] end
-end
-if not tocPath then
-	print("usage: luajit tools/build.lua <QuestieDB_Forever.toc> [--check]")
-	os.exit(1)
-end
+local deps = require("deps")
 
 local root = here .. "../"
+local tocPath, rest, other = deps.questiedb(arg, root)
+local check = false
+for _, word in ipairs(rest) do
+	if word ~= "--check" then
+		print("usage: luajit tools/build.lua [--check] [--questiedb <version>]")
+		os.exit(1)
+	end
+	check = true
+end
 local SOURCES = { "chains/vanilla.lua", "chains/dungeons.lua", "chains/classes.lua" }
 local OUT = root .. "Data/Chains.lua"
 
@@ -61,4 +65,5 @@ else
 	f:write(text)
 	f:close()
 	print("Wrote Data/Chains.lua.")
+	if other then print("Built against QuestieDB " .. other .. ", which may not be the version deps.lua records.") end
 end
