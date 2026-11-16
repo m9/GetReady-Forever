@@ -4,7 +4,7 @@
 
 [![Buy me a coffee](<https://img.shields.io/badge/Buy me a coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black>)](https://buymeacoffee.com/m9addons)
 
-![Get Ready window: Krol'dok Stronghold](https://media.forgecdn.net/attachments/2216/8/gr3-png.png)
+![Get Ready window: Krol'dok Stronghold](Media/Screenshot.png)
 
 ## Commands
 
@@ -38,7 +38,7 @@ Needs LuaJIT, `curl` and `tar`. `Data/Chains.lua` is built from `chains/*.lua` a
 
 ## Credits
 
-Inspired by Attune by CixiDelmont.
+Inspired by Attune by CixiDelmont. No code or data is taken from it.
 Quest data: QuestieDB.
 
 ## License
