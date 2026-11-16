@@ -1,7 +1,7 @@
 local ADDON, ns = ...
 
--- The addon's picture: a key. The TOC names the same one for the game's addon list.
-ns.ICON = "Interface\\Icons\\INV_Misc_Key_15"
+-- The addon's picture: a keyhole in a ring of steps (Media/Icon.svg). The TOC names the same one for the game's addon list.
+ns.ICON = "Interface\\AddOns\\GetReady\\Media\\Icon.tga"
 
 -- How much of the screen the window fills, in percent, until the player picks a size.
 ns.DEFAULT_SIZE, ns.MIN_SIZE, ns.MAX_SIZE = 80, 40, 100

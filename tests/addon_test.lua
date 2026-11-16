@@ -133,6 +133,19 @@ for line in io.lines(root .. "GetReady.toc") do
 end
 eq("toc file count", loaded, 8)
 eq("toc icon is the addon's icon", tocIcon, ns.ICON)
+do -- the picture is a file of ours: an uncompressed 64 x 64 TGA with alpha
+	local rel = ns.ICON:match("^Interface\\AddOns\\GetReady\\(.+)$")
+	local file = rel and io.open(root .. rel:gsub("\\", "/"), "rb")
+	local head = file and file:read(18)
+	if file then file:close() end
+	check("icon file is in the addon", head ~= nil and #head == 18, ns.ICON)
+	if head and #head == 18 then
+		eq("icon file is plain TGA", head:byte(3), 2)
+		eq("icon file width", head:byte(13) + head:byte(14) * 256, 64)
+		eq("icon file height", head:byte(15) + head:byte(16) * 256, 64)
+		eq("icon file depth", head:byte(17), 32)
+	end
+end
 eq("toc saved variable", savedVars, "GetReadyDB")
 
 -- Settings load on ADDON_LOADED

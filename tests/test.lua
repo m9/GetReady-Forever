@@ -1,6 +1,7 @@
 -- Mocked test. Runs the data tools against a small fake QuestieDB store.
 -- Usage: luajit tests/test.lua [QuestieDB_Forever.toc]
---   With a path, also checks the real database.
+--   Also checks the real database: the one at the path, or else the version deps.lua records
+--   when it is in .cache/. Never downloads.
 
 local here = arg[0]:gsub("[^/\\]*$", "")
 package.path = here .. "../tools/lib/?.lua;" .. package.path
@@ -358,8 +359,9 @@ do
 end
 
 -- real database (optional) --------------------------------------------------
-if arg[1] then
-	local real = qdb.open(arg[1])
+local realToc = arg[1] or require("deps").new(here .. "../"):cachedToc()
+if realToc then
+	local real = qdb.open(realToc)
 	local ids = real:questIds()
 	check("real: has quests", #ids > 1000, #ids)
 	local bad = 0
@@ -368,7 +370,7 @@ if arg[1] then
 	end
 	eq("real: decode failures", bad, 0)
 	local zones = require("zones")
-	local z = zones.load((arg[1]:gsub("[^/\\]*$", "")), real:meta("Flavor"))
+	local z = zones.load((realToc:gsub("[^/\\]*$", "")), real:meta("Flavor"))
 	eq("real: badlands map", z.map[3], 1418)
 	eq("real: badlands name", z.areaName[3], "Badlands")
 	eq("real: dungeon name", z.areaName[1583], "Blackrock Spire")

@@ -1,23 +1,25 @@
 -- Prints the quest chain that leads to a goal quest.
--- Usage: luajit tools/chain.lua <QuestieDB_Forever.toc> <questId> [questId ...]
+-- Usage: luajit tools/chain.lua [--questiedb <version>] <questId> [questId ...]
+--   Reads the QuestieDB version deps.lua records, or the one given.
 
 local here = arg[0]:gsub("[^/\\]*$", "")
 package.path = here .. "lib/?.lua;" .. package.path
 
 local qdb = require("qdb")
 local chain = require("chain")
+local deps = require("deps")
 
-local tocPath = arg[1]
-if not tocPath or not arg[2] then
-	print("usage: luajit tools/chain.lua <QuestieDB_Forever.toc> <questId> [questId ...]")
+if not arg[1] then
+	print("usage: luajit tools/chain.lua [--questiedb <version>] <questId> [questId ...]")
 	os.exit(1)
 end
+local tocPath, ids = deps.questiedb(arg, here .. "../")
 
 local db = qdb.open(tocPath)
 print(("QuestieDB %s, %d quests"):format(db:meta("Flavor") or "?", #db:questIds()))
 
-for i = 2, #arg do
-	local goal = tonumber(arg[i]) or error("not a quest id: " .. arg[i])
+for _, word in ipairs(ids) do
+	local goal = tonumber(word) or error("not a quest id: " .. word)
 	print("")
 	print("Chain to " .. goal .. ":")
 	for n, step in ipairs(chain.build(db, goal)) do
