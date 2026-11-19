@@ -1,5 +1,9 @@
 # Changelog
 
+## 16001-3.6
+
+- Quest data from QuestieDB 1.1.3.
+
 ## 16001-3.5
 
 - List shows the highest level a chain needs.
