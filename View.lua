@@ -746,14 +746,14 @@ function View.Build(selected, closed, modes, search, step, part)
 		for _, chain in ipairs(chains) do
 			if inGroup(chain, group, named) and (not search or chain.name:lower():find(search, 1, true)) then
 				local progress = progressOf[chain]
-				-- The level on the row: the lowest a step still to do asks for. A chain with
-				-- nothing left to do has none.
+				-- The level on the row: the highest a step still to do asks for, which is the
+				-- level it takes to finish the chain. A chain with nothing left to do has none.
 				local level
 				for i, step in ipairs(progress.steps) do
 					local state = progress.states[i]
 					-- the quest's own level stands in where the database has no level it asks for
 					local min = step.min or (step.level and step.level > 0 and step.level) or nil
-					if state ~= "done" and state ~= "skipped" and min and (not level or min < level) then level = min end
+					if state ~= "done" and state ~= "skipped" and min and (not level or min > level) then level = min end
 				end
 				if not level and not progress.done and #progress.steps == 0 then level = chain.level end
 				entry.total = entry.total + 1
@@ -765,7 +765,7 @@ function View.Build(selected, closed, modes, search, step, part)
 					done = progress.done,
 					marked = progress.marked,
 					new = chain.new or nil, -- new in Forever
-					level = level, -- the lowest level a step still to do asks for, or nil
+					level = level, -- the highest level a step still to do asks for, or nil
 					levelTone = level and levelTone(level) or nil,
 					various = chain.id:find("%-other$") ~= nil, -- a class's loose quests: last among its level
 					count = countText(progress),

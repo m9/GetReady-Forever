@@ -1511,7 +1511,7 @@ do
 		if g.label == "Dungeons" then for _, c in ipairs(g.chains) do if c.level then levels[#levels + 1] = c.level end end end
 	end
 	check("list: sorted by level, then name", sorted)
-	-- the level on a row is the lowest a step still to do asks for
+	-- the level on a row is the highest a step still to do asks for
 	local saved = ns.Chains
 	ns.Chains = {
 		{ id = "lv-a", name = "Alpha", kind = "misc", side = "Both", level = 10, steps = { { quest = 9501, name = "One", min = 10 }, { quest = 9502, name = "Two", min = 30, goal = true } } },
@@ -1524,9 +1524,9 @@ do
 		for _, c in ipairs(ns.View.Build(nil, {}, {}).groups[1].chains) do out[#out + 1] = c.name .. "=" .. tostring(c.level) end
 		return table.concat(out, " ")
 	end
-	eq("list level: lowest step first", rows(), "Alpha=10 Beta=20 Zeta=20 Various X Quests=20")
+	eq("list level: the highest step counts", rows(), "Beta=20 Zeta=20 Various X Quests=20 Alpha=30")
 	world.done[9501] = true
-	eq("list level: moves up as steps get done, and the order with it", rows(), "Beta=20 Zeta=20 Various X Quests=20 Alpha=30")
+	eq("list level: stays while the highest step is still to do", rows(), "Beta=20 Zeta=20 Various X Quests=20 Alpha=30")
 	world.done[9502] = true
 	eq("list level: a finished chain has none and goes last", rows(), "Beta=20 Zeta=20 Various X Quests=20 Alpha=nil")
 	world.done[9501], world.done[9502] = nil, nil

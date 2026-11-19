@@ -1,5 +1,9 @@
 # Changelog
 
+## 16001-3.5
+
+- List shows the highest level a chain needs.
+
 ## 16001-3.4
 
 - Added the CurseForge project ID.
