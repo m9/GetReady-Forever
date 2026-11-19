@@ -2,10 +2,10 @@
 -- Change it with: luajit tools/deps.lua use <name> [version]
 return {
 	questiedb = {
-		version = "1.1.1",
-		commit = "4dbb82440a27856f8dccf57094a5d792cdc7cc9b",
+		version = "1.1.3",
+		commit = "8b8df2dc12a34e2eb82bc7105b40405dce1c01f7",
 		files = {
-			["QuestieDB-1.1.1-Forever.zip"] = "2527118d861e497fa40bdb6d061883bf09649d5f96e09de6885f578aefbb5e59",
+			["QuestieDB-1.1.3-Forever.zip"] = "98201b11bf9854895f2c966d3924b9fb10d18d10dcad7540465e7d761c1f624d",
 		},
 	},
 	attune = {
