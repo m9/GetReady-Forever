@@ -1,5 +1,10 @@
 # Changelog
 
+## 16001-3.7
+
+- New guide view: what to do in order, by place.
+- The guide replaces the step list.
+
 ## 16001-3.6
 
 - Quest data from QuestieDB 1.1.3.

@@ -131,7 +131,7 @@ for line in io.lines(root .. "GetReady.toc") do
 		if chunk then chunk("GetReady", ns) loaded = loaded + 1 end
 	end
 end
-eq("toc file count", loaded, 8)
+eq("toc file count", loaded, 9)
 eq("toc icon is the addon's icon", tocIcon, ns.ICON)
 do -- the picture is a file of ours: an uncompressed 64 x 64 TGA with alpha
 	local rel = ns.ICON:match("^Interface\\AddOns\\GetReady\\(.+)$")
@@ -525,7 +525,8 @@ do
 	eq("graph: detail steps carry cells", d.steps[4].col .. ":" .. d.steps[4].row, "3:2")
 	eq("graph: starts at the next step", d.graph.focus, 3)
 	eq("graph: step status", d.steps[1].status .. "/" .. d.steps[3].status .. "/" .. d.steps[5].status, "Turned in/Available/Locked")
-	eq("graph: player picks the list", ns.View.Detail(chain, nil, { t = "list" }).mode, "list")
+	eq("graph: player picks the guide", ns.View.Detail(chain, nil, { t = "guide" }).mode, "guide")
+	eq("graph: what was saved as the list is the guide", ns.View.Detail(chain, nil, { t = "list" }).mode, "guide")
 
 	reset()
 	-- steps that do not lead to one another still have a graph: one column, one under the other
@@ -533,7 +534,7 @@ do
 	check("graph: steps without links stand in one column", loose ~= nil and loose.cols == 1 and #loose.edges == 0 and loose.rows == #Progress.Chain(pick).steps)
 	check("graph: but the list is what opens first", loose.auto == false)
 	eq("graph: is what a chain opens as", ns.View.Detail(pick).mode, "graph")
-	eq("graph: the list, once picked, is remembered", ns.View.Detail(pick, nil, { p = "list" }).mode, "list")
+	eq("graph: the guide, once picked, is remembered", ns.View.Detail(pick, nil, { p = "guide" }).mode, "guide")
 	d = ns.View.Detail(pick, nil, { p = "graph" })
 	check("graph: the player can pick it", d.mode == "graph" and d.graph ~= nil)
 	local single = ns.View.Graph(Progress.Chain({ id = "one", name = "One", kind = "misc", side = "Both", steps = { { quest = 9701, name = "Only", goal = true } } }))
@@ -769,6 +770,155 @@ check("hidden other side", not Progress.Visible({ side = "Alliance" }, "Horde"))
 check("hidden when no step is for this faction", not Progress.Visible({ side = "Both", steps = { { quest = 1, side = "Alliance" } } }, "Horde"))
 check("hidden when no step is for this class", not Progress.Visible({ side = "Both", steps = { { quest = 1, classes = 128 } } }, "Horde"))
 check("item-only chain visible", Progress.Visible({ side = "Both", steps = {}, reward = 1 }, "Horde"))
+
+-- Guide: a chain as lines to do, in order, by place ----------------------------------
+do
+	local saved = { ns.Npcs, ns.Objects, ns.Items, ns.Areas }
+	ns.Npcs = {
+		[50] = { name = "Giver", area = 3, map = 1418, x = 5.81, y = 47.52 },
+		[51] = { name = "Boss", area = 1583, inside = true, map = 1428, x = 29.4, y = 38.3 },
+		[53] = { name = "Elder", area = 4, map = 1419, x = 10, y = 20 },
+		[54] = { name = "Wolf", area = 3, map = 1418, x = 7, y = 40.25 },
+		[55] = { name = "Captive", area = 4, map = 1419, x = 12, y = 22 },
+	}
+	ns.Objects = {}
+	ns.Items = { [70] = { name = "Trophy" }, [71] = { name = "Fang", npc = { 54 } }, [72] = { name = "Old Note", npc = { 51 } } }
+	ns.Areas = {}
+	local g = { id = "g", name = "G", kind = "misc", side = "Both", steps = {
+		{ quest = 101, name = "Wolves", min = 20, from = { npc = { 50 } }, to = { npc = { 50 } }, kill = { 54 }, items = { 71 }, text = "Kill 5 Wolves." },
+		{ quest = 102, name = "Boss Hunt", min = 20, from = { npc = { 50 } }, to = { npc = { 50 } }, kill = { 51 }, items = { 70 }, text = "Slay Boss." },
+		{ quest = 103, name = "Report", any = { 101 }, from = { npc = { 50 } }, to = { npc = { 53 } }, text = "Speak with Elder." },
+		{ quest = 104, name = "Rescue", any = { 103 }, from = { npc = { 53 } }, to = { npc = { 53 } }, kill = { 55 }, text = "Free 3 Captives." },
+	} }
+	local function lines(guide)
+		local out = {}
+		for _, block in ipairs(guide.blocks) do
+			out[#out + 1] = "[" .. tostring(block.place) .. (block.inside and "*" or "") .. "]"
+			for _, line in ipairs(block.lines) do
+				out[#out + 1] = line.n .. " " .. line.label .. " " .. line.name .. line.tail
+					.. (line.done and " ok" or "") .. (line.now and " <" or "")
+			end
+		end
+		return table.concat(out, "\n")
+	end
+	reset()
+	local guide = ns.Guide.Build(g)
+	-- pick up all there is, do what is here, hand in; the dungeon comes last, and its quest is handed in after it
+	eq("guide: the walk", lines(guide), table.concat({
+		"[Area 3]",
+		"1 Accept Wolves from Giver <",
+		"2 Accept Boss Hunt from Giver",
+		"3 Kill Wolf",
+		"4 Loot Fang from Wolf",
+		"5 Get Trophy",
+		"6 Turn in Wolves to Giver",
+		"7 Accept Report from Giver",
+		"[Area 4]",
+		"8 Turn in Report to Elder",
+		"9 Accept Rescue from Elder",
+		"10 Find Captive",
+		"11 Turn in Rescue to Elder",
+		"[Area 1583*]",
+		"12 Kill Boss",
+		"[Area 3]",
+		"13 Turn in Boss Hunt to Giver",
+	}, "\n"))
+	eq("guide: lines in all", guide.total, 13)
+	eq("guide: lines to do", guide.left, 13)
+	local first, kill, boss = guide.blocks[1].lines[1], guide.blocks[1].lines[3], guide.blocks[3].lines[1]
+	eq("guide: accept says what the quest asks", first.note, "Kill 5 Wolves.")
+	eq("guide: where the giver stands", first.at, "5.8, 47.5")
+	check("guide: a place for the map", first.target ~= nil and first.target.map == 1418 and first.target.name == "Giver")
+	eq("guide: a thing to do names its quest", kill.of, "Wolves")
+	eq("guide: a line knows its quest", kill.quest, 101)
+	check("guide: no spot inside a dungeon", boss.at == nil and boss.target == nil)
+	check("guide: no level when the player has it", first.level == nil)
+	-- what the character has done is marked; the order stays
+	world.done[101], world.log[102], world.items[70] = true, true, 1
+	guide = ns.Guide.Build(g)
+	eq("guide: done lines are marked", lines(guide), table.concat({
+		"[Area 3]",
+		"1 Accept Wolves from Giver ok",
+		"2 Accept Boss Hunt from Giver ok",
+		"3 Kill Wolf ok",
+		"4 Loot Fang from Wolf ok",
+		"5 Get Trophy ok",
+		"6 Turn in Wolves to Giver ok",
+		"7 Accept Report from Giver <",
+		"[Area 4]",
+		"8 Turn in Report to Elder",
+		"9 Accept Rescue from Elder",
+		"10 Find Captive",
+		"11 Turn in Rescue to Elder",
+		"[Area 1583*]",
+		"12 Kill Boss",
+		"[Area 3]",
+		"13 Turn in Boss Hunt to Giver",
+	}, "\n"))
+	eq("guide: lines left", guide.left, 7)
+	check("guide: a place with lines left is not done", guide.blocks[1].done == false)
+	reset(10)
+	eq("guide: the level a quest asks for, when the player is below it", ns.Guide.Build(g).blocks[1].lines[1].level, 20)
+	reset()
+
+	-- a thing with no place known goes into the dungeon the quest's words name
+	local hole = { id = "h", name = "Deep Hole", kind = "dungeon", side = "Both", steps = {
+		{ quest = 111, name = "Trophies", from = { npc = { 50 } }, to = { npc = { 50 } }, items = { 70 }, text = "Get 3 Trophies in Deep Hole." },
+	} }
+	eq("guide: a dungeon by the quest's words", lines(ns.Guide.Build(hole)),
+		"[Area 3]\n1 Accept Trophies from Giver <\n[Deep Hole*]\n2 Get Trophy\n[Area 3]\n3 Turn in Trophies to Giver")
+
+	-- a quest an item starts is accepted where the item drops
+	local note = { id = "n", name = "N", kind = "misc", side = "Both", steps = {
+		{ quest = 121, name = "The Note", from = { item = { 72 } }, to = { npc = { 50 } } },
+	} }
+	eq("guide: a quest from an item", lines(ns.Guide.Build(note)),
+		"[Area 1583*]\n1 Accept The Note from the item Old Note (Boss) <\n[Area 3]\n2 Turn in The Note to Giver")
+
+	-- one quest in two forms: only one is shown, the one in the log when there is one
+	local twins = { id = "tw", name = "TW", kind = "misc", side = "Both", steps = {
+		{ quest = 131, name = "Pick", from = { npc = { 50 } }, to = { npc = { 50 } } },
+		{ quest = 132, name = "Pick", from = { npc = { 53 } }, to = { npc = { 53 } } },
+		{ quest = 133, name = "After", any = { 131, 132 }, from = { npc = { 50 } }, to = { npc = { 50 } } },
+	} }
+	eq("guide: one of two forms", lines(ns.Guide.Build(twins)),
+		"[Area 3]\n1 Accept Pick from Giver <\n2 Turn in Pick to Giver\n3 Accept After from Giver\n4 Turn in After to Giver")
+	world.log[132] = true
+	eq("guide: the form in the log", lines(ns.Guide.Build(twins)),
+		"[Area 4]\n1 Accept Pick from Elder ok\n2 Turn in Pick to Elder <\n[Area 3]\n3 Accept After from Giver\n4 Turn in After to Giver")
+	world.log[132], world.done[132] = nil, true
+	local after = ns.Guide.Build(twins)
+	check("guide: a place with nothing left is done", after.blocks[1].done == true and after.blocks[2].done == false)
+	eq("guide: lines left after a turn-in", after.left, 2)
+	-- "Free" and "Speak" are not killing; "Slay" is
+	eq("guide: a creature to find", ns.Guide.Build(g).blocks[2].lines[3].kind, "find")
+	eq("guide: a creature to kill", ns.Guide.Build(g).blocks[3].lines[1].kind, "kill")
+	reset()
+
+	-- a quest that waits for one the character cannot do still gets its lines
+	local stuck = { id = "st", name = "ST", kind = "misc", side = "Both", steps = {
+		{ quest = 141, name = "Theirs", side = "Alliance" },
+		{ quest = 142, name = "Ours", any = { 141 }, from = { npc = { 50 } }, to = { npc = { 50 } } },
+	} }
+	eq("guide: nothing is left out", lines(ns.Guide.Build(stuck)), "[Area 3]\n1 Accept Ours from Giver <\n2 Turn in Ours to Giver")
+
+	-- a chain that is only an item: one line, through the made-up step
+	local key = ns.View.Detail({ id = "ik", name = "IK", kind = "key", side = "Both", reward = 72, steps = {} }, nil, { ik = "guide" })
+	eq("guide: detail mode", key.mode, "guide")
+	eq("guide: an item chain", key.guide and lines(key.guide), "[Area 1583*]\n1 Loot Old Note from Boss <")
+	check("guide: not made for the graph", ns.View.Detail(g).guide == nil)
+	local shown = ns.View.Detail(g, nil, { g = "guide" }, 101)
+	eq("guide: for a chain with steps", shown.guide.total, 13)
+	-- each line has its step, for what the step gives; the picked step's lines say so
+	local l1, l3, l2 = shown.guide.blocks[1].lines[1], shown.guide.blocks[1].lines[3], shown.guide.blocks[1].lines[2]
+	check("guide: a line has its step", l1.step == shown.steps[1] and l2.step == shown.steps[2])
+	check("guide: the picked step's lines", l1.picked and l3.picked and not l2.picked)
+	-- a thing to do says which of the step's parts it is
+	eq("guide: a line's part", tostring(l1.part) .. " " .. l3.part .. " " .. shown.guide.blocks[1].lines[4].part, "nil 1 2")
+	eq("guide: the part is the step's", shown.steps[1].parts[l3.part].name, l3.name)
+
+	ns.Npcs, ns.Objects, ns.Items, ns.Areas = saved[1], saved[2], saved[3], saved[4]
+end
 
 -- Real data ------------------------------------------------------------------------
 ns.Chains, ns.Npcs, ns.Objects, ns.Items = realData.Chains, realData.Npcs, realData.Objects, realData.Items
@@ -1039,24 +1189,71 @@ do
 		local _ = ( 16 * 196 + 15 * 26 - (1480 - 290 - 22 - 18 * 3 - 12))
 	end
 
-	local toList = labelled("Show list")
-	check("graph: list button", toList ~= nil)
-	if toList then toList.scripts.OnClick(toList) end
-	eq("graph: choice saved", ns.db.modes["ony-horde"], "list")
-	eq("graph: boxes gone", boxes(), 0)
-	check("graph: list rows back", button(function(f)
-		return rawget(f, "hint") and rawget(f, "mark") and f.name.text and f.name.text:find("Warlord's Command", 1, true)
-	end) ~= nil)
-	check("list: every step says what it gives", button(function(f)
+	-- the guide: the other way to show the steps, as numbered lines by place
+	local function guideRows()
+		local n = 0
+		for _, f in ipairs(frames) do
+			if f.kind == "Button" and rawget(f, "num") and f.shown and f.num.text ~= "" then n = n + 1 end
+		end
+		return n
+	end
+	eq("guide: no rows until it is picked", guideRows(), 0)
+	check("guide: no list button any more", labelled("Show list") == nil)
+	local toGuide = labelled("Show guide")
+	check("guide: button", toGuide ~= nil)
+	if toGuide then toGuide.scripts.OnClick(toGuide) end
+	eq("guide: choice saved", ns.db.modes["ony-horde"], "guide")
+	eq("guide: boxes gone", boxes(), 0)
+	eq("guide: a row per line", guideRows(), 45)
+	check("guide: the graph is offered", labelled("Show graph") ~= nil and labelled("Show guide") == nil)
+	local firstRow = button(function(f)
+		return rawget(f, "num") and f.name.text and f.name.text:find("Warlord's Command", 1, true)
+			and f.name.text:find("Accept", 1, true)
+	end)
+	check("guide: first line", firstRow ~= nil and firstRow.num.text == "1." and firstRow.now.shown and not firstRow.pick.shown
+		and firstRow.name.text:find("from Warlord Goretooth (5.8, 47.5)", 1, true) ~= nil)
+	check("guide: what the quest asks, under it", firstRow ~= nil and firstRow.hint.shown
+		and firstRow.hint.text:find("Slay Highlord Omokk", 1, true) ~= nil)
+	check("guide: the level it asks for, before its name", firstRow ~= nil and firstRow.name.text:find("[55]|r Warlord's Command", 1, true) ~= nil)
+	eq("guide: what it gives, on its right", firstRow and firstRow.xp.text, "8,300 XP")
+	check("guide: every quest says what it gives", button(function(f)
 		local hint = rawget(f, "hint")
 		return hint and rawget(f, "mark") and f.name.text and f.name.text:find("Eitrigg's Wisdom", 1, true)
 			and rawget(hint, "text") and hint.text:find("+100 Orgrimmar", 1, true) and f.xp.text == "6,600 XP"
 	end) ~= nil)
-	local toGraph = labelled("Show graph")
-	check("graph: graph button", toGraph ~= nil)
-	if toGraph then toGraph.scripts.OnClick(toGraph) end
+	-- a thing to do is a line of its own, and nothing is on its right
+	local kill = button(function(f) return rawget(f, "partRow") and rawget(f, "quest") == 4903 and rawget(f, "at") == 1 end)
+	check("guide: a kill line", kill ~= nil and kill.name.text:find("Kill", 1, true) ~= nil and kill.skull.shown
+		and kill.name.text:find("Warlord's Command", 1, true) ~= nil and kill.xp.text == "" and not kill.hint.shown, kill and kill.name.text)
+	local heads = {}
+	for _, f in ipairs(frames) do
+		if rawget(f, "guideHead") and f.shown then heads[#heads + 1] = f.label.text .. (f.tag.text ~= "" and "*" or "") end
+	end
+	eq("guide: places", table.concat(heads, ", ", 1, 4), "Area 3, Area 1583*, Area 3, Area 1637")
+	-- a click on a line shows its step in the side panel, and marks the step's lines
+	if firstRow then firstRow.scripts.OnClick(firstRow) end
+	check("guide: a click shows the step", texts():find("Kargath", 1, true) ~= nil)
+	check("guide: the step's lines are marked", firstRow.pick.shown and firstRow.pickEdge.shown and kill.pick.shown)
+	if firstRow then firstRow.scripts.OnClick(firstRow) end
+	check("guide: a second click takes the mark away", not firstRow.pick.shown and not kill.pick.shown)
+	-- a quest in the log: its accept line is behind the player, the next line is lit
+	world.log[4903] = true
+	eventFrame.scripts.OnEvent(eventFrame, "QUEST_LOG_UPDATE")
+	check("guide: done line dimmed", firstRow ~= nil and firstRow.alpha == 0.5 and not firstRow.now.shown and not firstRow.hint.shown)
+	check("guide: the next line is lit", kill.now.shown and kill.alpha == 1)
+	world.log[4903] = nil
+	eventFrame.scripts.OnEvent(eventFrame, "QUEST_LOG_UPDATE")
+	-- what earlier versions saved as "list" opens as the guide
+	ns.db.modes["ony-horde"] = "list"
+	ns.Window.Refresh()
+	eq("guide: an old saved list is the guide", guideRows(), 45)
+	local back = labelled("Show graph")
+	check("graph: graph button", back ~= nil)
+	if back then back.scripts.OnClick(back) end
 	eq("graph: back to the graph", boxes(), 18)
 	eq("graph: choice saved again", ns.db.modes["ony-horde"], "graph")
+	eq("guide: rows gone", guideRows(), 0)
+	check("guide: offered again", labelled("Show guide") ~= nil)
 end
 
 -- an event while open redraws
@@ -1074,7 +1271,7 @@ do
 	check("molten core steps shown", texts():find("Attunement to the Core", 1, true) ~= nil)
 	check("one step: the graph button is there too", button(function(f)
 		local l = rawget(f, "label")
-		return l and (rawget(l, "text") == "Show graph" or rawget(l, "text") == "Show list")
+		return l and (rawget(l, "text") == "Show graph" or rawget(l, "text") == "Show guide")
 	end) ~= nil)
 	world.done[7848] = true
 	eventFrame.scripts.OnEvent(eventFrame, "QUEST_TURNED_IN")
@@ -1599,7 +1796,8 @@ do
 	check("step level: in brackets before the name", stepRow(9804).name.text:find("[40]|r Over", 1, true) ~= nil, stepRow(9804).name.text)
 	check("step level: red when over the player's level", stepRow(9804).name.text:find("|cffff4033", 1, true) ~= nil, stepRow(9804).name.text)
 	check("step level: no words about the level after the name", not stepRow(9804).name.text:find("level", 1, true))
-	eq("step level: a step with no level has no brackets", stepRow(9805).name.text, "No level")
+	check("step level: a step with no level has no brackets", stepRow(9805).name.text:find("No level", 1, true) ~= nil
+		and not stepRow(9805).name.text:find("[", 1, true), stepRow(9805).name.text)
 	local reach = button(function(f) return rawget(f, "pickEdge") and rawget(f, "name") and (f.name.text or ""):find("^Reach level") end)
 	eq("step level: Reach level has no brackets", reach and reach.name.text, "Reach level 10")
 	-- on the graph

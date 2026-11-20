@@ -203,6 +203,11 @@ local function where(rec)
 	return text ~= "" and (" (" .. text .. ")") or ""
 end
 
+-- An area's name, or nil.
+function Progress.AreaName(id)
+	return areaName(id)
+end
+
 -- " (Badlands 5.8, 47.5)" or " (in Blackrock Spire)" for a creature or object record, else "".
 function Progress.Place(rec)
 	return where(rec)

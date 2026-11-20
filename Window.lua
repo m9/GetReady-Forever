@@ -2,7 +2,7 @@ local _, ns = ...
 
 -- Main window: chains on the left, the picked chain's steps in the middle, and a side panel
 -- on the right with two tabs: details (of the chain, or of the step you clicked) and loot.
--- The steps show as a list, or as a graph when they lead to one another; they are what the
+-- The steps show as a graph, or as the guide: numbered lines by place; they are what the
 -- window is for, so they get most of the room.
 --
 -- Look: black and gold. Gold is for names, headings and what is picked. Plain text is
@@ -40,7 +40,6 @@ local LOOT_PER_ROW = math.floor(LOOT_WIDTH / ICON)
 local REWARD_ROWS = 4 -- more than this many rows of a step's rewards in the side panel is cut short
 local INFO_ROWS = 8 -- label and text lines in the side panel
 local STEP_WIDTH = DETAIL_WIDTH - 26 -- minus the scroll bar
-local STEP_ROW = 28
 local STEP_ICON = 24 -- a reward icon on a step, with its gap
 local STEP_ICONS = 4 -- reward icons shown on a step
 local STEP_RIGHT = 28 + STEP_ICONS * STEP_ICON -- room the icons and "+2" take on the right of a step
@@ -101,7 +100,8 @@ end
 -- A step's state: the color of its mark and stripe, and of its name.
 -- A quest in the log is silver until it is complete; ready to turn in is gold.
 local SILVER = { 0.78, 0.78, 0.80 }
-local STATE_COLOR = { done = GREEN, skipped = GREEN_DIM, active = SILVER, turnin = GOLD, ready = BLUE, locked = FAINT }
+local STATE_COLOR = { done = GREEN, skipped = GREEN_DIM, active = SILVER, turnin = GOLD, ready = BLUE, locked = FAINT,
+	todo = MUTED } -- a thing to do in the guide: it has no picture, so a small square in this color
 local STATE_TEXT = { done = GREEN, skipped = GREEN_DIM, active = SILVER, turnin = GOLD, ready = TEXT, locked = MUTED }
 -- The marks are the game's own quest pictures, the ones over quest givers' heads: a yellow
 -- "!" for a quest you can take, a grey "?" for one in your log, a yellow "?" for one ready
@@ -386,10 +386,12 @@ local sideOpen = false -- the side panel is closed until a step is clicked
 local lootOpen = false -- the "Rewards and loot" pop-up
 local INFO_LINKS = 10 -- "After" and "Leads to" lines in the side panel
 local INFO_PARTS = 8 -- kill, use and get lines in the side panel
-local PART_ROW = 22 -- a kill, use or get line under a step in the list
 local MODEL_HEIGHT = 190 -- the creature's 3D model in the side panel
 local pickedPart -- which part of the picked step the side panel shows a model of, or nil
-local partRows = {}
+local guideHeads = {} -- the guide's headings, one per place
+local GUIDE_HEAD = 34
+local GUIDE_ROW = 24 -- a line of the guide, without the words under it
+local guideOf -- the chain whose guide was drawn last, to scroll a newly opened one to its next line
 local mid = WIDE_WIDTH -- how wide the middle is right now: WIDE_WIDTH, or DETAIL_WIDTH beside the side panel
 -- Where the graph is scrolled to, how far it can go, and whose graph it is.
 local graph = { x = 0, y = 0, maxX = 0, maxY = 0 }
@@ -424,36 +426,12 @@ local function PickPart(quest, at)
 	Window.Refresh()
 end
 
--- A kill, use or get line under a step in the list.
-local function PartRow(i)
-	local row = partRows[i]
-	if row then return row end
-	row = CreateFrame("Button", nil, stepChild)
-	row:SetHeight(PART_ROW)
-	row.hover = row:CreateTexture(nil, "HIGHLIGHT")
-	row.hover:SetAllPoints()
-	row.hover:SetColorTexture(1, 1, 1, 0.05)
-	row.mark = Mark(row, 14)
-	row.mark:SetPoint("LEFT", 34, 0)
-	row.skull = row:CreateTexture(nil, "ARTWORK")
-	row.skull:SetSize(14, 14)
-	row.skull:SetPoint("LEFT", 54, 0)
-	row.skull:SetTexture(SKULL)
-	row.name = Text(row, "GameFontHighlightSmall", TEXT)
-	row.name:SetPoint("LEFT", 54, 0)
-	row.name:SetWordWrap(false)
-	row.partRow = true
-	row:SetScript("OnClick", function(self) PickPart(self.quest, self.at) end)
-	partRows[i] = row
-	return row
-end
-
 -- One line for a part: "Kill  Name (place)", the word grey, the place grey.
 local function PartText(part)
 	return MUTED_CODE .. part.label .. "|r  " .. part.name .. MUTED_CODE .. part.place .. "|r"
 end
 
--- A click on a step in the list or graph: shows it; a second click on it closes the panel.
+-- A click on a step in the guide or graph: shows it; a second click on it closes the panel.
 local function PickStep(quest)
 	if type(quest) ~= "number" then return end -- "Reach level N" has no quest and nothing more to show
 	if quest == pickedStep and not pickedPart then return CloseSide() end
@@ -543,50 +521,73 @@ end
 
 -- Middle --------------------------------------------------------------------------
 
+-- A place in the guide: its name, over the lines to do there.
+local function GuideHead(i)
+	local row = guideHeads[i]
+	if row then return row end
+	row = CreateFrame("Frame", nil, stepChild)
+	row:SetHeight(GUIDE_HEAD)
+	row.label = Heading(row, 17, GOLD)
+	row.label:SetPoint("BOTTOMLEFT", 4, 7)
+	row.tag = Text(row, "GameFontHighlightSmall", MUTED)
+	row.tag:SetPoint("BOTTOMLEFT", row.label, "BOTTOMRIGHT", 8, 1)
+	row.line = Fill(row, "ARTWORK", GOLD_DIM, 0.7)
+	row.line:SetPoint("BOTTOMLEFT", 2, 2)
+	row.line:SetPoint("BOTTOMRIGHT", -2, 2)
+	row.line:SetHeight(1)
+	row.guideHead = true
+	guideHeads[i] = row
+	return row
+end
+
+-- A line of the guide: its number, a mark, what to do. A quest's "Accept" line also has what
+-- the quest gives on its right (XP, reward icons) and, under it, what the quest asks.
 local function StepRow(i)
 	local row = stepRows[i]
 	if row then return row end
 	row = CreateFrame("Button", nil, stepChild)
-	row:SetWidth(STEP_WIDTH)
 	row.hover = row:CreateTexture(nil, "HIGHLIGHT")
 	row.hover:SetAllPoints()
 	row.hover:SetColorTexture(1, 1, 1, 0.05)
-	row.rule = Fill(row, "BACKGROUND", LINE, 0.45)
-	row.rule:SetPoint("BOTTOMLEFT")
-	row.rule:SetPoint("BOTTOMRIGHT")
-	row.rule:SetHeight(1)
-	row.mark = Mark(row, 18)
-	row.mark:SetPoint("TOPLEFT", 4, -5)
-	row.name = Text(row, "GameFontHighlight", TEXT)
-	row.name:SetPoint("TOPLEFT", 30, -6)
-	row.name:SetWidth(STEP_WIDTH - 34 - STEP_RIGHT - 104)
-	row.name:SetWordWrap(false)
-	-- right side: XP, then reward icons
-	-- a skull left of the XP, for a step with something to kill
-	row.skull = row:CreateTexture(nil, "ARTWORK")
-	row.skull:SetSize(16, 16)
-	row.skull:SetPoint("TOPRIGHT", -STEP_RIGHT - 8 - 96 - 4, -6)
-	row.skull:SetTexture(SKULL)
-	row.xp = Text(row, "GameFontHighlightSmall", VIOLET)
-	row.xp:SetPoint("TOPRIGHT", -STEP_RIGHT - 8, -8)
-	row.xp:SetWidth(96)
-	row.xp:SetJustifyH("RIGHT")
-	row.icons = {}
-	row.more = Text(row, "GameFontHighlightSmall", MUTED)
-	row.more:SetPoint("TOPRIGHT", -2, -8)
-	row.more:SetWidth(26)
-	row.more:SetJustifyH("RIGHT")
-	row.hint = Text(row, "GameFontHighlightSmall", TEXT)
-	row.hint:SetPoint("TOPLEFT", 30, -STEP_ROW)
-	row.hint:SetWidth(STEP_WIDTH - 34)
-	row.hint:SetSpacing(3)
-	row.pick = Fill(row, "BACKGROUND", GOLD, 0.10) -- the step shown in the side panel
+	row.now = Fill(row, "BACKGROUND", GOLD, 0.07) -- the next line to do
+	row.now:SetAllPoints()
+	row.pick = Fill(row, "BACKGROUND", GOLD, 0.10) -- a line of the step shown in the side panel
 	row.pick:SetAllPoints()
 	row.pickEdge = Fill(row, "ARTWORK", GOLD, 1)
 	row.pickEdge:SetPoint("TOPLEFT")
 	row.pickEdge:SetPoint("BOTTOMLEFT")
 	row.pickEdge:SetWidth(2)
-	row:SetScript("OnClick", function(self) PickStep(self.quest) end)
+	row.num = Text(row, "GameFontHighlightSmall", MUTED)
+	row.num:SetPoint("TOPLEFT", 4, -6)
+	row.num:SetWidth(26)
+	row.num:SetJustifyH("RIGHT")
+	row.mark = Mark(row, 16)
+	row.mark:SetPoint("TOPLEFT", 36, -4)
+	-- the game's small skull: in the mark's place on a kill line, and before the XP of a
+	-- quest that has something to kill
+	row.skull = row:CreateTexture(nil, "ARTWORK")
+	row.skull:SetSize(14, 14)
+	row.skull:SetTexture(SKULL)
+	row.name = Text(row, "GameFontHighlight", TEXT)
+	row.name:SetPoint("TOPLEFT", 60, -4)
+	row.name:SetWordWrap(false)
+	-- right side of an "Accept" line: XP, then reward icons
+	row.xp = Text(row, "GameFontHighlightSmall", VIOLET)
+	row.xp:SetPoint("TOPRIGHT", -STEP_RIGHT - 8, -6)
+	row.xp:SetWidth(96)
+	row.xp:SetJustifyH("RIGHT")
+	row.icons = {}
+	row.more = Text(row, "GameFontHighlightSmall", MUTED)
+	row.more:SetPoint("TOPRIGHT", -2, -6)
+	row.more:SetWidth(26)
+	row.more:SetJustifyH("RIGHT")
+	row.hint = Text(row, "GameFontHighlightSmall", MUTED)
+	row.hint:SetPoint("TOPLEFT", 60, -GUIDE_ROW)
+	row.hint:SetSpacing(3)
+	-- a thing to kill, use or get shows its step with that creature's model; any other line its step
+	row:SetScript("OnClick", function(self)
+		if self.at then PickPart(self.quest, self.at) else PickStep(self.quest) end
+	end)
 	stepRows[i] = row
 	return row
 end
@@ -1294,7 +1295,7 @@ local function Build()
 	detail.next.pin:SetPoint("TOPRIGHT", -10, -10)
 	detail.next.pin:SetScript("OnClick", function(self) Pin(self.target) end)
 
-	-- "Steps" and the graph or list button, on one line. The marks are the game's own
+	-- "Steps" and the graph or guide button, on one line. The marks are the game's own
 	-- quest pictures, so they need no legend.
 	detail.stepsLabel = Heading(detail, 19, GOLD)
 	detail.stepsLabel:SetText("Steps")
@@ -1430,80 +1431,143 @@ local function DrawNext(next)
 	box:SetHeight(box.height)
 end
 
---   first: "Reach level N", drawn before the quest steps, or nil
-local function DrawSteps(steps, first)
-	local y, used = 0, 0
-	local list = steps
-	if first and #steps > 0 then
-		list = { first }
-		for i, step in ipairs(steps) do list[i + 1] = step end
-	end
-	steps = list
-	for i, step in ipairs(steps) do
-		local row = StepRow(i)
-		row:SetWidth(mid - 26)
-		row.name:SetWidth(mid - 26 - 34 - STEP_RIGHT - 104 - 22)
-		row.skull:SetShown(HasKill(step))
-		row.skull:SetAlpha((step.state == "done" or step.state == "skipped") and 0.4 or 1)
-		row.hint:SetWidth(mid - 26 - 34)
-		local finished = step.state == "done" or step.state == "skipped"
-		row.mark:Set(step.mark)
-		-- the level after the name: red when the player is below it
-		row.name:SetText(LevelTag(step) .. step.name)
-		Color(row.name, STATE_TEXT[step.mark])
-		row.xp:SetText(step.xp or "")
-		row.xp:SetAlpha(finished and 0.5 or 1)
-		-- under the name: what to do, then the reputation the quest gives
-		local lines = {}
-		for _, line in ipairs(step.hints) do
-			-- what to kill, use and get has its own lines under the step
-			local own = #(step.parts or {}) > 0 and (line:find("^Kill:") or line:find("^Use:") or line:find("^Get:"))
-			if not own then lines[#lines + 1] = Pretty(line) end
-		end
-		if step.rep then lines[#lines + 1] = TEAL_CODE .. step.rep .. "|r" end
-		row.hint:SetText(table.concat(lines, "\n"))
-		row.hint:SetShown(#lines > 0)
-		row.hint:SetAlpha(finished and 0.5 or 1)
-		row.quest = step.quest
-		row.pick:SetShown(step.picked == true)
-		row.pickEdge:SetShown(step.picked == true)
-		local left = ShowIcons(row.icons, row, step.rewards, STEP_ICONS, STEP_ICON - 2, function(b, n)
-			b:SetPoint("TOPRIGHT", -28 - (STEP_ICONS - n) * STEP_ICON, -3)
-		end)
-		for n = 1, #row.icons do row.icons[n]:SetAlpha(finished and 0.45 or 1) end
-		row.more:SetText(left > 0 and ("+" .. left) or "")
-		local height = STEP_ROW + (#lines > 0 and (TextHeight(row.hint, #lines) + 8) or 2)
+-- The guide: the chain as numbered lines, under the place each is done in. Lines behind the
+-- player are dimmed; the first one still to do is lit; the lines of the step in the side
+-- panel are marked. "Reach level N" comes first, before the first place.
+--   d: View.Detail's table, or nil to hide the lines (the graph is showing)
+local function DrawSteps(d)
+	local guide = d and d.guide
+	local heads, rows, y, nowY = 0, 0, 0, nil
+	local width = mid - 26
+	local function put(row, height)
+		row:SetWidth(width)
 		row:SetHeight(height)
 		row:ClearAllPoints()
 		row:SetPoint("TOPLEFT", 0, -y)
 		row:Show()
 		y = y + height
-		-- under the step: what it has you kill, use and get, a line each
-		for at, part in ipairs(step.parts or {}) do
-			used = used + 1
-			local line = PartRow(used)
-			line.quest, line.at = step.quest, at
-			line.mark:Set(part.mark)
-			line.name:SetText(PartText(part))
-			-- a kill line has the skull between its mark and its words
-			local kill = part.kind == "kill"
-			line.skull:SetShown(kill)
-			line.name:ClearAllPoints()
-			line.name:SetPoint("LEFT", kill and 74 or 54, 0)
-			line.name:SetWidth(mid - 26 - 60 - (kill and 20 or 0))
-			Color(line.name, STATE_TEXT[part.mark] or TEXT)
-			line:SetAlpha(finished and 0.55 or 1)
-			line:SetWidth(mid - 26)
-			line:ClearAllPoints()
-			line:SetPoint("TOPLEFT", 0, -y)
-			line:Show()
-			y = y + PART_ROW
-		end
-		if #(step.parts or {}) > 0 then y = y + 4 end
 	end
-	for i = used + 1, #partRows do partRows[i]:Hide() end
-	for i = #steps + 1, #stepRows do stepRows[i]:Hide() end
+	-- a line with nothing on its right and nothing under it
+	local function plain(row)
+		row.name:SetWidth(width - 64)
+		row.xp:SetText("")
+		row.more:SetText("")
+		ShowIcons(row.icons, row, {}, STEP_ICONS, STEP_ICON - 2, function() end)
+		row.hint:SetText("")
+		row.hint:Hide()
+	end
+	if guide and d.reach then
+		local reach = d.reach
+		rows = 1
+		local row = StepRow(1)
+		row.quest, row.at, row.partRow = nil, false, false
+		row.num:SetText("")
+		row.skull:Hide()
+		row.mark:Show()
+		row.mark:Set(reach.mark)
+		row.name:SetText(reach.name)
+		Color(row.name, STATE_TEXT[reach.mark])
+		plain(row)
+		row.now:Hide()
+		row.pick:Hide()
+		row.pickEdge:Hide()
+		row:SetAlpha(1)
+		put(row, GUIDE_ROW)
+	end
+	for _, block in ipairs(guide and guide.blocks or {}) do
+		if block.place then
+			heads = heads + 1
+			local head = GuideHead(heads)
+			head.label:SetText(block.place)
+			head.tag:SetText(block.inside and "dungeon" or "")
+			head:SetAlpha(block.done and 0.5 or 1)
+			head:SetWidth(width)
+			head:ClearAllPoints()
+			head:SetPoint("TOPLEFT", 0, -y)
+			head:Show()
+			y = y + GUIDE_HEAD + 2
+		end
+		for _, line in ipairs(block.lines) do
+			rows = rows + 1
+			local row = StepRow(rows)
+			local step = line.step
+			local accept = line.kind == "accept" and step ~= nil
+			row.quest, row.at, row.partRow = line.quest, line.part or false, line.part ~= nil
+			row.num:SetText(line.n .. ".")
+			Color(row.num, line.now and GOLD or MUTED)
+			-- the mark: a check once done; else "!" to accept, "?" to turn in (grey until the
+			-- quest is complete), a skull to kill, a small square for anything else
+			local kill = line.kind == "kill" and not line.done
+			local kills = accept and HasKill(step)
+			row.skull:SetShown(kill or kills)
+			row.skull:ClearAllPoints()
+			if kill then
+				row.skull:SetPoint("TOPLEFT", 37, -5)
+			else
+				row.skull:SetPoint("TOPRIGHT", -STEP_RIGHT - 8 - 96 - 4, -5)
+			end
+			row.mark:SetShown(not kill)
+			row.mark:Set(line.done and "done" or (line.kind == "accept" and "ready")
+				or (line.kind == "turnin" and ((step and step.mark == "turnin") and "turnin" or "active")) or "todo")
+			-- "Accept  [30] Quest from Giver (12.3, 45.6)"; a thing to do ends with its quest's name
+			local text = MUTED_CODE .. line.label .. "|r  " .. (accept and LevelTag(step) or "") .. line.name
+				.. MUTED_CODE .. line.tail .. (line.at and (" (" .. line.at .. ")") or "") .. "|r"
+			if line.optional then text = text .. MUTED_CODE .. "  optional|r" end
+			if line.of then text = text .. MUTED_CODE .. "   " .. line.of .. "|r" end
+			row.name:SetText(text)
+			Color(row.name, line.done and STATE_TEXT.done or TEXT)
+			local height = GUIDE_ROW
+			if accept then
+				row.name:SetWidth(width - 60 - STEP_RIGHT - 104 - 22)
+				row.xp:SetText(step.xp or "")
+				local left = ShowIcons(row.icons, row, step.rewards, STEP_ICONS, STEP_ICON - 2, function(b, n)
+					b:SetPoint("TOPRIGHT", -28 - (STEP_ICONS - n) * STEP_ICON, -1)
+				end)
+				row.more:SetText(left > 0 and ("+" .. left) or "")
+				-- under it, while the quest is still to take: what it asks, what it needs, the
+				-- reputation it gives
+				local lines = {}
+				if not line.done then
+					if line.note and line.note ~= "" then lines[#lines + 1] = line.note end
+					for _, hint in ipairs(step.hints) do
+						if hint:find("^Needs ") then lines[#lines + 1] = Pretty(hint) end
+					end
+					if step.rep then lines[#lines + 1] = TEAL_CODE .. step.rep .. "|r" end
+				end
+				row.hint:SetShown(#lines > 0)
+				row.hint:SetWidth(width - 64)
+				row.hint:SetText(table.concat(lines, "\n"))
+				if #lines > 0 then height = height + TextHeight(row.hint, #lines) + 6 end
+			else
+				plain(row)
+			end
+			row.now:SetShown(line.now == true)
+			row.pick:SetShown(line.picked == true)
+			row.pickEdge:SetShown(line.picked == true)
+			row:SetAlpha(line.done and 0.5 or 1)
+			if line.now then nowY = y end
+			put(row, height)
+		end
+		y = y + 6
+	end
+	for i = heads + 1, #guideHeads do guideHeads[i]:Hide() end
+	for i = rows + 1, #stepRows do stepRows[i]:Hide() end
 	stepChild:SetHeight(math.max(y, 10))
+	if not guide then
+		guideOf = nil
+		return
+	end
+	-- a guide that has just opened starts at its next line, a little down from the top;
+	-- the game knows how far it can scroll only a moment later
+	if guideOf ~= d.id then
+		local id = d.id
+		guideOf = id
+		local to = math.max(0, (nowY or 0) - GUIDE_HEAD - GUIDE_ROW * 2)
+		local function scroll()
+			if guideOf == id then detail.stepScroll:ScrollTo(to) end
+		end
+		if C_Timer and C_Timer.After then C_Timer.After(0.05, scroll) else scroll() end
+	end
 end
 
 -- "Loot" tab: first every reward the chain's quests give, then what may drop on the way,
@@ -1975,7 +2039,7 @@ local function DrawDetail(d)
 	DrawSide(d)
 	Preload(d)
 	local asGraph = d.graph ~= nil and d.mode == "graph"
-	DrawSteps(asGraph and {} or d.steps, d.reach)
+	DrawSteps(not asGraph and d or nil)
 
 	-- Stack the blocks top down. The steps get everything under the "Next" box.
 	local y = BANNER_HEIGHT + 8
@@ -1987,13 +2051,13 @@ local function DrawDetail(d)
 
 	place(detail.next, detail.next.height or 70, 14)
 
-	-- "Steps" and the graph or list button on the same line
+	-- "Steps" and the graph or guide button on the same line
 	detail.stepsLabel:SetShown(#d.steps > 0)
 	detail.mode:SetShown(d.graph ~= nil)
 	if d.graph then
 		detail.mode.chain = d.id
-		detail.mode.to = asGraph and "list" or "graph"
-		detail.mode.label:SetText(asGraph and "Show list" or "Show graph")
+		detail.mode.to = asGraph and "guide" or "graph"
+		detail.mode.label:SetText(asGraph and "Show guide" or "Show graph")
 		detail.mode:ClearAllPoints()
 		detail.mode:SetPoint("TOPRIGHT", detail, "TOPLEFT", mid, -(y - 4))
 	end

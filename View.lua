@@ -435,7 +435,9 @@ function View.LevelTone(level, playerLevel)
 end
 
 -- Everything about one chain.
---   modes: { [chain id] = "graph" or "list" } what the player picked for the steps
+--   modes: { [chain id] = "graph" or "guide" } what the player picked for the steps.
+--           With "guide", detail.guide is the walk-through (Guide.lua), each line with
+--           step (its entry in detail.steps) and picked.
 --   part:   which of the picked step's parts the side panel shows a model of (a number;
 --           the first creature to kill when nil). See detail.picked.model.
 --   picked: quest ID of the step the player clicked, for the side panel. detail.picked is
@@ -449,7 +451,7 @@ function View.Detail(chain, progress, modes, picked, part)
 	progress = progress or Progress.Chain(chain)
 
 	-- A chain that is only an item ("get this key") has no quest steps. It gets one made-up
-	-- step, so the list and the side panel have something to show: the item, and who or
+	-- step, so the guide and the side panel have something to show: the item, and who or
 	-- what has it. Its quest number is the item's, negative. A box or chest is taken over
 	-- the creatures the database also lists.
 	local walk = progress
@@ -644,18 +646,32 @@ function View.Detail(chain, progress, modes, picked, part)
 		end
 	end
 
-	-- Steps as a graph, when they lead to one another. mode says what to draw.
+	-- Steps as a graph, or as the guide. mode says what to draw.
 	local graph = View.Graph(walk, chain.id:find("%-other$") ~= nil)
-	detail.mode = "list"
+	detail.mode = "guide"
 	if graph then
 		for i, cell in ipairs(graph.at) do
 			detail.steps[i].col, detail.steps[i].row = cell.col, cell.row
 		end
 		local _, _, focus = Progress.Next(chain, progress)
 		detail.graph = { cols = graph.cols, rows = graph.rows, edges = graph.edges, focus = focus }
-		local picked = modes and modes[chain.id]
-		-- the graph is what a chain opens as; "Show list" is remembered per chain
-		if picked ~= "list" then detail.mode = "graph" end
+		local want = modes and modes[chain.id]
+		-- the graph is what a chain opens as; the guide, once picked, is remembered per chain
+		-- ("list" is what settings saved by earlier versions call it)
+		if want ~= "guide" and want ~= "list" then detail.mode = "graph" end
+	end
+	-- The guide: the chain as lines to do, in order (Guide.lua). Each line gets its step from
+	-- detail.steps, for what the step gives and needs, and says if it is the picked step's.
+	if detail.mode == "guide" then
+		detail.guide = ns.Guide.Build(chain, walk)
+		local byQuest = {}
+		for _, step in ipairs(detail.steps) do byQuest[step.quest] = step end
+		for _, block in ipairs(detail.guide.blocks) do
+			for _, line in ipairs(block.lines) do
+				line.step = byQuest[line.quest]
+				line.picked = line.step ~= nil and line.step.picked == true
+			end
+		end
 	end
 
 	-- Every chain starts with "Reach level N", N being the level its first quest asks for.
@@ -693,11 +709,11 @@ end
 --   groups   { { kind, label, done, total, closed, chains = { { id, kind, name, done, new, count, fraction } } } }
 --   selected id of the picked chain
 --   detail   View.Detail of that chain, or nil when the character has no chains;
---            detail.mode is "graph" or "list", detail.graph is nil when there is no graph to draw
+--            detail.mode is "graph" or "guide", detail.graph is nil when there is no graph to draw
 -- }
 --   selected: wanted chain id (falls back to the first one listed)
 --   closed:   { [kind] = true } for folded groups
---   modes:    { [chain id] = "graph" or "list" }, see View.Detail
+--   modes:    { [chain id] = "graph" or "guide" }, see View.Detail
 --   search:   text typed over the list. The list then holds only chains whose name has it,
 --             every group is open, and model.search is the text. The picked chain stays.
 --   step:     quest ID of the step the player clicked, see View.Detail. model.step is that
